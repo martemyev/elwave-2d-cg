@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 2.8)
 
-project(cg-2d-el)
+project(elwave-2d-cg CXX)
 
 set(MFEM_DIR "/u/artemyev/projects/mfem/")
 include_directories("${MFEM_DIR}")

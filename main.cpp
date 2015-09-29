@@ -39,8 +39,11 @@ void save_vts(int time_step, const std::string &solname,
 class CWConstCoefficient : public Coefficient
 {
 public:
-  CWConstCoefficient(double *array) : val_array(array) { }
-  ~CWConstCoefficient() { delete[] val_array; }
+  CWConstCoefficient(double *array, bool own = 1)
+    : val_array(array), own_array(own)
+  { }
+
+  ~CWConstCoefficient() { if (own_array) delete[] val_array; }
 
   double Eval(ElementTransformation &T, const IntegrationPoint &ip)
   {
@@ -49,6 +52,7 @@ public:
 
 private:
   double *val_array;
+  bool own_array;
 };
 
 
@@ -64,8 +68,14 @@ void compute_rayleigh_damping_weights(int n_elements_x,
                                       double *damping_weights);
 
 void read_binary(const char *filename, int n_values, double *values);
+void get_minmax(double *array, int n_elements, double &min_val, double &max_val);
 
 void get_damp_alphas(double source_frequency, double &alpha1, double &alpha2);
+
+void solve_without_damp_layer(int nx, int ny, double *rho_array,
+                              double *vp_array, double *vs_array, int order,
+                              int dim, Mesh *mesh, double sx, double sy,
+                              double tend, double tstep, bool visualization);
 
 
 
@@ -79,6 +89,7 @@ int main(int argc, char *argv[])
    int order = 1; // order of the finite element basis functions for the approximation
    bool visualization = 1; // whether we output the solution for visualization
    const char *rhofile = "no-file", *vpfile = "no-file", *vsfile = "no-file";
+   const double abs_layer_width = 100.0;
 
    // Parse command-line options.
    OptionsParser args(argc, argv);
@@ -106,203 +117,60 @@ int main(int argc, char *argv[])
    bool gen_edges = 1;
    Mesh *mesh = new Mesh(nx, ny, Element::QUADRILATERAL, gen_edges, sx, sy);
    int dim = mesh->Dimension();
+   cout << "dim = " << dim << endl;
+   const int n_elements = mesh->GetNE();
+   MFEM_VERIFY(nx*ny == n_elements, "Unexpected number of mesh elements");
 
+   double *rho_array = new double[n_elements];
+   double *vp_array  = new double[n_elements];
+   double *vs_array  = new double[n_elements];
 
-   double *rho_array = new double[nx*ny];
-   double *vp_array  = new double[nx*ny];
-   double *vs_array  = new double[nx*ny];
-
-//   double min_vp, max_vp, min_vs, max_vs;
+   double min_rho, max_rho, min_vp, max_vp, min_vs, max_vs;
 
    if (strcmp(rhofile, "no-file") == 0)
-     for (int i = 0; i < nx*ny; ++i) rho_array[i] = RHO;
+   {
+     for (int i = 0; i < n_elements; ++i) rho_array[i] = RHO;
+     min_rho = max_rho = RHO;
+   }
    else
-     read_binary(rhofile, nx*ny, rho_array);
+   {
+     read_binary(rhofile, n_elements, rho_array);
+     get_minmax(rho_array, n_elements, min_rho, max_rho);
+   }
 
    if (strcmp(vpfile, "no-file") == 0)
-     for (int i = 0; i < nx*ny; ++i) vp_array[i] = VP;
+   {
+     for (int i = 0; i < n_elements; ++i) vp_array[i] = VP;
+     min_vp = max_vp = VP;
+   }
    else
-     read_binary(vpfile,  nx*ny, vp_array);
+   {
+     read_binary(vpfile, n_elements, vp_array);
+     get_minmax(vp_array, n_elements, min_vp, max_vp);
+   }
 
    if (strcmp(vsfile, "no-file") == 0)
-     for (int i = 0; i < nx*ny; ++i) vs_array[i] = VS;
+   {
+     for (int i = 0; i < n_elements; ++i) vs_array[i] = VS;
+     min_vs = max_vs = VS;
+   }
    else
-     read_binary(vsfile,  nx*ny, vs_array);
-
-   const double abs_layer_width = 100.0;
-   bool left(true), right(true), bottom(true), top(false);
-   double *damping_weights = new double[nx*ny];
-   compute_rayleigh_damping_weights(nx, ny, 0, sx, 0, sy, abs_layer_width,
-                                    left, right, bottom, top, damping_weights);
-
-   double alpha1, alpha2;
-   get_damp_alphas(FREQUENCY, alpha1, alpha2);
-   cout << "alpha1 = " << alpha1 << "\n"
-        << "alpha2 = " << alpha2 << "\n" << endl;
-
-   double *lambda_array   = new double[nx*ny];
-   double *mu_array       = new double[nx*ny];
-   double *w_rho_array    = new double[nx*ny];
-   double *w_lambda_array = new double[nx*ny];
-   double *w_mu_array     = new double[nx*ny];
-   for (int i = 0; i < nx*ny; ++i)
    {
-     const double rho = rho_array[i];
-     const double vp  = vp_array[i];
-     const double vs  = vs_array[i];
-     const double w   = damping_weights[i];
-
-     lambda_array[i]  = rho*(vp*vp - 2.*vs*vs);
-     mu_array[i]      = rho*vs*vs;
-     w_rho_array[i]   = w*rho;
-     w_lambda_array[i]= w*lambda_array[i];
-     w_mu_array[i]    = w*mu_array[i];
-   }
-   CWConstCoefficient rho_cw(rho_array);
-   CWConstCoefficient lambda_cw(lambda_array);
-   CWConstCoefficient mu_cw(mu_array);
-   CWConstCoefficient w_rho(w_rho_array);
-   CWConstCoefficient w_lambda(w_lambda_array);
-   CWConstCoefficient w_mu(w_mu_array);
-
-   FiniteElementCollection *fec;
-   fec = new H1_FECollection(order, dim);
-   FiniteElementSpace *fespace = new FiniteElementSpace(mesh, fec, dim, Ordering::byNODES);
-   cout << "Number of unknowns: " << fespace->GetVSize() << endl;
-
-
-   BilinearForm *s = new BilinearForm(fespace);
-   s->AddDomainIntegrator(new ElasticityIntegrator(lambda_cw, mu_cw));
-   s->Assemble();
-   s->Finalize();
-   const SparseMatrix& S = s->SpMat();
-
-   BilinearForm *m = new BilinearForm(fespace);
-   m->AddDomainIntegrator(new VectorMassIntegrator(rho_cw));
-   m->Assemble();
-   m->Finalize();
-   SparseMatrix& M = m->SpMat();
-
-
-   BilinearForm *ds = new BilinearForm(fespace);
-   ds->AddDomainIntegrator(new ElasticityIntegrator(w_lambda, w_mu));
-   ds->Assemble();
-   ds->Finalize();
-   SparseMatrix& D = ds->SpMat();
-   D *= alpha2;
-
-   BilinearForm *dm = new BilinearForm(fespace);
-   dm->AddDomainIntegrator(new VectorMassIntegrator(w_rho));
-   dm->Assemble();
-   dm->Finalize();
-   SparseMatrix& DM = dm->SpMat();
-   DM *= alpha1;
-
-   D += DM;
-   D *= 0.5*tstep;
-
-   cout << "D.nnz = " << D.NumNonZeroElems() << "\n"
-        << "M.nnz = " << M.NumNonZeroElems() << endl;
-
-
-   const int nnz = D.NumNonZeroElems();
-   const bool ownij  = false;
-   const bool ownval = true;
-   SparseMatrix Sys(D.GetI(), D.GetJ(), new double[nnz], D.Height(), D.Width(),
-                    ownij, ownval, D.areColumnsSorted());
-   Sys = 0.0;
-   Sys += D;
-   Sys += M;
-
-
-   // Define a simple symmetric Gauss-Seidel preconditioner.
-   GSSmoother prec(Sys);
-
-   GridFunction x_0(fespace);
-   GridFunction x_1(fespace);
-   GridFunction x_2(fespace);
-   x_0 = 0.0;
-   x_1 = 0.0;
-   x_2 = 0.0;
-
-
-   // Set up the linear form b(.) which corresponds to the RHS.
-   LinearForm *b = new LinearForm(fespace);
-   VectorFunctionCoefficient f(dim, Gauss);
-   b->AddDomainIntegrator(new VectorDomainLFIntegrator(f));
-   b->Assemble();
-
-   cout << "||b||_L2 = " << b->Norml2() << endl;
-
-   const double hy = sy / ny;
-   const int rec_y_index = RECEIVER_Y / hy;
-
-   ofstream solout_x("seis0.bin", std::ios::binary);
-   ofstream solout_y("seis1.bin", std::ios::binary);
-
-   const int n_time_steps = ceil(tend/tstep);
-   const int tenth = 0.1 * n_time_steps;
-
-   cout << "N time steps = " << n_time_steps
-        << "\nTime loop..." << endl;
-
-   const int N = x_0.Size();
-
-   for (int time_step = 1; time_step <= n_time_steps; ++time_step)
-   {
-     const double cur_time = time_step * tstep;
-
-     const double r = Ricker(cur_time - tstep);
-
-     Vector y = x_1; y *= 2.0; y -= x_2;        // y = 2*x_1 - x_2
-     Vector z0; z0.SetSize(N); M.Mult(y, z0);   // z0 = M * (2*x_1 - x_2)
-     Vector z1; z1.SetSize(N); S.Mult(x_1, z1); // z1 = S * x_1
-     Vector z2 = *b; z2 *= r;                   // z2 = r * b
-     y = z1; y -= z2; y *= tstep*tstep;         // y = dt^2 * (S*x_1 - r*b)
-     Vector RHS = z0; RHS -= y;                 // RHS = M*(2*x_1-x_2) - dt^2*(S*x_1-r*b)
-     D.Mult(x_2, y);                            // y = D * x_2
-     RHS += y;                                  // RHS = M*(2*x_1-x_2) - dt^2*(S*x_1-r*b) + D*x_2
-
-     // Solve the SLAE
-     const int print_iter = 0;
-     PCG(Sys, prec, RHS, x_0, print_iter, 200, 1e-12, 0.0);
-
-     // Compute and print the L^2 norm of the error
-     if (time_step % tenth == 0)
-       cout << "step " << time_step << " / " << n_time_steps
-            << " ||solution||_{L^2} = " << x_0.Norml2() << endl;
-
-     Vector nodal_values_x, nodal_values_y;
-     x_0.GetNodalValues(nodal_values_x, 1);
-     x_0.GetNodalValues(nodal_values_y, 2);
-
-     if (visualization && (time_step % STEP_SNAP == 0))
-     {
-       save_vts(time_step, "displ", sx, sy, nx, ny, nodal_values_x, nodal_values_y);
-     }
-
-     for (int i = 0; i < nx+1; ++i)
-     {
-       float val_x = nodal_values_x(rec_y_index*(nx+1)+i);
-       float val_y = nodal_values_y(rec_y_index*(nx+1)+i);
-       solout_x.write((char*)&val_x, sizeof(val_x));
-       solout_y.write((char*)&val_y, sizeof(val_y));
-     }
-
-     x_2 = x_1;
-     x_1 = x_0;
+     read_binary(vsfile, n_elements, vs_array);
+     get_minmax(vs_array, n_elements, min_vs, max_vs);
    }
 
-   cout << "Time loop is over" << endl;
+   const double min_wavelength = min(min_vp, min_vs) / (2.0*FREQUENCY);
+   cout << "min wavelength = " << min_wavelength << endl;
 
-   // Free the used memory.
-   delete b;
-   delete dm;
-   delete ds;
-   delete m;
-   delete s;
-   delete fespace;
-   delete fec;
+   if (abs_layer_width < 2.5*min_wavelength)
+     mfem_warning("damping layer for absorbing bc should be about 3*wavelength");
+
+
+//   solve_with_damp_layer();
+   solve_without_damp_layer(nx, ny, rho_array,vp_array, vs_array, order, dim,
+                            mesh, sx, sy, tend, tstep, visualization);
+
    delete mesh;
 }
 
@@ -481,6 +349,18 @@ void read_binary(const char *filename,
 
 
 
+void get_minmax(double *array, int n_elements, double &min_val, double &max_val)
+{
+  min_val = max_val = array[0];
+  for (int i = 1; i < n_elements; ++i)
+  {
+    min_val = min(min_val, array[i]);
+    max_val = max(max_val, array[i]);
+  }
+}
+
+
+
 void get_damp_alphas(double source_frequency, double &alpha1, double &alpha2)
 {
   // These numbers have been obtained by Kai Gao, while he's been a PhD student
@@ -493,3 +373,137 @@ void get_damp_alphas(double source_frequency, double &alpha1, double &alpha2)
   alpha1 = 2.*w1*w2*(xi2*w1-xi1*w2)/(w1*w1-w2*w2);
   alpha2 = 2.*(xi1*w1-xi2*w2)/(w1*w1-w2*w2);
 }
+
+
+
+
+
+void solve_without_damp_layer(int nx, int ny, double *rho_array,
+                              double *vp_array, double *vs_array, int order,
+                              int dim, Mesh *mesh, double sx, double sy,
+                              double tend, double tstep, bool visualization)
+{
+  const int n_elements = nx*ny;
+  double *lambda_array   = new double[n_elements];
+  double *mu_array       = new double[n_elements];
+  for (int i = 0; i < n_elements; ++i)
+  {
+    const double rho = rho_array[i];
+    const double vp  = vp_array[i];
+    const double vs  = vs_array[i];
+
+    lambda_array[i]  = rho*(vp*vp - 2.*vs*vs);
+    mu_array[i]      = rho*vs*vs;
+  }
+  CWConstCoefficient rho_cw(rho_array);
+  CWConstCoefficient lambda_cw(lambda_array);
+  CWConstCoefficient mu_cw(mu_array);
+
+  FiniteElementCollection *fec;
+  fec = new H1_FECollection(order, dim);
+  FiniteElementSpace *fespace = new FiniteElementSpace(mesh, fec, dim, Ordering::byVDIM);
+  cout << "Number of unknowns: " << fespace->GetVSize() << endl;
+
+
+  BilinearForm *s = new BilinearForm(fespace);
+  s->AddDomainIntegrator(new ElasticityIntegrator(lambda_cw, mu_cw));
+  s->Assemble();
+  s->Finalize();
+  const SparseMatrix& S = s->SpMat();
+
+  BilinearForm *m = new BilinearForm(fespace);
+  m->AddDomainIntegrator(new VectorMassIntegrator(rho_cw));
+  m->Assemble();
+  m->Finalize();
+  SparseMatrix& M = m->SpMat();
+
+
+  ofstream mout("mass_mat.dat");
+  m->PrintMatlab(mout);
+
+  cout << "M.nnz = " << M.NumNonZeroElems() << endl;
+
+
+  // Define a simple symmetric Gauss-Seidel preconditioner.
+  GSSmoother prec(M);
+
+  GridFunction x_0(fespace);
+  GridFunction x_1(fespace);
+  GridFunction x_2(fespace);
+  x_0 = 0.0;
+  x_1 = 0.0;
+  x_2 = 0.0;
+
+
+  // Set up the linear form b(.) which corresponds to the RHS.
+  LinearForm *b = new LinearForm(fespace);
+  VectorFunctionCoefficient f(dim, Gauss);
+  b->AddDomainIntegrator(new VectorDomainLFIntegrator(f));
+  b->Assemble();
+
+  cout << "||b||_L2 = " << b->Norml2() << endl;
+
+  const double hy = sy / ny;
+  const int rec_y_index = RECEIVER_Y / hy;
+
+  ofstream solout_x("seis0.bin", std::ios::binary);
+  ofstream solout_y("seis1.bin", std::ios::binary);
+
+  const int n_time_steps = ceil(tend/tstep);
+  const int tenth = 0.1 * n_time_steps;
+
+  cout << "N time steps = " << n_time_steps
+       << "\nTime loop..." << endl;
+
+  const int N = x_0.Size();
+
+  for (int time_step = 1; time_step <= n_time_steps; ++time_step)
+  {
+    const double cur_time = time_step * tstep;
+
+    const double r = Ricker(cur_time - tstep);
+
+    Vector y = x_1; y *= 2.0; y -= x_2;        // y = 2*x_1 - x_2
+    Vector z0; z0.SetSize(N); M.Mult(y, z0);   // z0 = M * (2*x_1 - x_2)
+    Vector z1; z1.SetSize(N); S.Mult(x_1, z1); // z1 = S * x_1
+    Vector z2 = *b; z2 *= r;                   // z2 = r * b
+    y = z1; y -= z2; y *= tstep*tstep;         // y = dt^2 * (S*x_1 - r*b)
+    Vector RHS = z0; RHS -= y;                 // RHS = M*(2*x_1-x_2) - dt^2*(S*x_1-r*b)
+
+    // Solve the SLAE
+    const int print_iter = 0;
+    PCG(M, prec, RHS, x_0, print_iter, 200, 1e-12, 0.0);
+
+    // Compute and print the L^2 norm of the error
+    if (time_step % tenth == 0)
+      cout << "step " << time_step << " / " << n_time_steps
+           << " ||solution||_{L^2} = " << x_0.Norml2() << endl;
+
+    Vector nodal_values_x, nodal_values_y;
+    x_0.GetNodalValues(nodal_values_x, 1);
+    x_0.GetNodalValues(nodal_values_y, 2);
+
+    if (visualization && (time_step % STEP_SNAP == 0))
+      save_vts(time_step, "displ", sx, sy, nx, ny, nodal_values_x, nodal_values_y);
+
+    for (int i = 0; i < nx+1; ++i)
+    {
+      float val_x = nodal_values_x(rec_y_index*(nx+1)+i);
+      float val_y = nodal_values_y(rec_y_index*(nx+1)+i);
+      solout_x.write((char*)&val_x, sizeof(val_x));
+      solout_y.write((char*)&val_y, sizeof(val_y));
+    }
+
+    x_2 = x_1;
+    x_1 = x_0;
+  }
+
+  cout << "Time loop is over" << endl;
+
+  delete b;
+  delete m;
+  delete s;
+  delete fespace;
+  delete fec;
+}
+

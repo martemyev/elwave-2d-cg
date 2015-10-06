@@ -1,13 +1,18 @@
 #ifndef UTILITIES_HPP
 #define UTILITIES_HPP
 
+#include <sstream>
 #include <stdexcept>
 
-//------------------------------------------------------------------------------
-//
-// d2s<T> - convert data of type T to string
-//
-//------------------------------------------------------------------------------
+#ifndef nullptr
+  #define nullptr NULL
+#endif
+
+namespace mfem
+{
+  class Vector;
+}
+
 /**
  * Convert the data of any type which has oveloaded operator '<<' to string
  * @param data - the data
@@ -42,5 +47,23 @@ inline std::string d2s(T data,
 
   return o.str();
 }
+
+/**
+ * Convert an angle in degrees to radians.
+ */
+double to_radians(double x);
+
+/**
+ * Read a binary file
+ */
+void read_binary(const char *filename, int n_values, double *values);
+
+/**
+ * Find min and max values of the given array (vector) a
+ */
+void get_minmax(double *a, int n_elements, double &min_val, double &max_val);
+
+void save_vts(int time_step, const std::string& solname, double sx, double sy,
+              int nx, int ny, const mfem::Vector& sol_x, const mfem::Vector& sol_y);
 
 #endif // UTILITIES_HPP

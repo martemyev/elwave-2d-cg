@@ -63,7 +63,20 @@ void read_binary(const char *filename, int n_values, double *values);
  */
 void get_minmax(double *a, int n_elements, double &min_val, double &max_val);
 
-void save_vts(int time_step, const std::string& solname, double sx, double sy,
-              int nx, int ny, const mfem::Vector& sol_x, const mfem::Vector& sol_y);
+/**
+ * Save a snapshot of a wavefield in a VTS format
+ * @param filebase - base for naming the output file
+ * @param time_step - number of a time step (for naming the output file)
+ * @param solname - name of the wavefield
+ * @param sx - size of domain in x-direction
+ * @param sy - size of domain in y-direction
+ * @param nx - number of cells in x-direction
+ * @param ny - number of cells in y-direction
+ * @param sol_x - x-component of the vector wavefield
+ * @param sol_y - y-component of the vector wavefield
+ */
+void save_vts(const std::string& filebase, int time_step,
+              const std::string& solname, double sx, double sy, int nx, int ny,
+              const mfem::Vector& sol_x, const mfem::Vector& sol_y);
 
 #endif // UTILITIES_HPP

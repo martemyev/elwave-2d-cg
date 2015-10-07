@@ -69,14 +69,13 @@ void get_minmax(double *a, int n_elements, double &min_val, double &max_val)
 
 
 
-void save_vts(int time_step, const std::string& solname, double sx, double sy,
-              int nx, int ny, const Vector& sol_x, const Vector& sol_y)
+void save_vts(const std::string& filebase, int time_step,
+              const std::string& solname, double sx, double sy, int nx, int ny,
+              const Vector& sol_x, const Vector& sol_y)
 {
-  ostringstream ostr;
-  ostr << time_step;
-  const string filename = "results_Dleft_t" + ostr.str() + ".vts";
+  const string filename = filebase + "_" + d2s(time_step) + ".vts";
   ofstream out(filename.c_str());
-  if (!out) throw runtime_error("File can't be opened");
+  MFEM_VERIFY(out, "File '" + filename + "' can't be opened");
 
   out << "<?xml version=\"1.0\"?>\n";
   out << "<VTKFile type=\"StructuredGrid\" version=\"0.1\">\n";

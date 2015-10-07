@@ -57,6 +57,9 @@ ElasticWave2D::ElasticWave2D(const Parameters &_param)
   , fespace(nullptr)
   , stif(nullptr)
   , mass(nullptr)
+  , rho_coef(nullptr)
+  , lambda_coef(nullptr)
+  , mu_coef(nullptr)
   , elast_int(nullptr)
   , mass_int(nullptr)
   , vector_point_force(nullptr)
@@ -70,6 +73,10 @@ ElasticWave2D::~ElasticWave2D()
 {
   delete b;
 
+  delete mu_coef;
+  delete lambda_coef;
+  delete rho_coef;
+
   delete momemt_tensor_source;
   delete vector_point_force;
 
@@ -80,25 +87,29 @@ ElasticWave2D::~ElasticWave2D()
   delete mesh;
 }
 
-void ElasticWave2D::run_FEM()
-{
-  offline_stage();
-}
-
-void ElasticWave2D::run_SEM()
+void ElasticWave2D::run()
 {
   offline_stage();
 
-  IntegrationRule segment_GLL;
-  create_segment_GLL_rule(param.order, segment_GLL);
-  IntegrationRule quad_GLL(segment_GLL, segment_GLL);
+  IntegrationRule *segment_GLL = nullptr;
+  IntegrationRule *quad_GLL = nullptr;
 
-  elast_int->SetIntRule(&quad_GLL);
-  mass_int->SetIntRule(&quad_GLL);
-  point_force_int->SetIntRule(&quad_GLL);
-  moment_tensor_int->SetIntRule(&quad_GLL);
+  if (param.method == 1) // SEM
+  {
+    segment_GLL = new IntegrationRule;
+    create_segment_GLL_rule(param.order, *segment_GLL);
+    quad_GLL = new IntegrationRule(*segment_GLL, *segment_GLL);
 
-  online_stage(SEM);
+    elast_int->SetIntRule(quad_GLL);
+    mass_int->SetIntRule(quad_GLL);
+    point_force_int->SetIntRule(quad_GLL);
+    moment_tensor_int->SetIntRule(quad_GLL);
+  }
+
+  online_stage();
+
+  delete quad_GLL;
+  delete segment_GLL;
 }
 
 void ElasticWave2D::offline_stage()
@@ -126,15 +137,15 @@ void ElasticWave2D::offline_stage()
     lambda_array[i]  = rho*(vp*vp - 2.*vs*vs);
     mu_array[i]      = rho*vs*vs;
   }
-  CWConstCoefficient *rho_cw = new CWConstCoefficient(param.rho_array, 0);
-  CWConstCoefficient *lambda_cw = new CWConstCoefficient(lambda_array);
-  CWConstCoefficient *mu_cw = new CWConstCoefficient(mu_array);
+  rho_coef = new CWConstCoefficient(param.rho_array, 0);
+  lambda_coef = new CWConstCoefficient(lambda_array);
+  mu_coef = new CWConstCoefficient(mu_array);
 
-  elast_int = new ElasticityIntegrator(*lambda_cw, *mu_cw);
+  elast_int = new ElasticityIntegrator(*lambda_coef, *mu_coef);
   stif = new BilinearForm(fespace);
   stif->AddDomainIntegrator(elast_int);
 
-  mass_int = new VectorMassIntegrator(*rho_cw);
+  mass_int = new VectorMassIntegrator(*rho_coef);
   mass = new BilinearForm(fespace);
   mass->AddDomainIntegrator(mass_int);
 
@@ -149,7 +160,7 @@ void ElasticWave2D::offline_stage()
   b->AddDomainIntegrator(moment_tensor_int);
 }
 
-void ElasticWave2D::online_stage(Method method)
+void ElasticWave2D::online_stage()
 {
   stif->Assemble();
   stif->Finalize();
@@ -165,9 +176,9 @@ void ElasticWave2D::online_stage(Method method)
 
   GSSmoother *prec = nullptr;
   Vector *diagM = nullptr;
-  if (method == FEM)
+  if (param.method == 0) // FEM
     prec = new GSSmoother(M);
-  else if (method == SEM)
+  else if (param.method == 1) // SEM
   {
     diagM = new Vector;
     M.GetDiag(*diagM); // mass matrix is diagonal
@@ -198,10 +209,12 @@ void ElasticWave2D::online_stage(Method method)
   const int n_time_steps = ceil(param.T / param.dt);
   const int tenth = 0.1 * n_time_steps;
 
+  const string method_name = (param.method == 0 ? "FEM" : "SEM");
+  const string snapshot_filebase = method_name + "_o" + d2s(param.order);
+  const int N = x_0.Size();
+
   cout << "N time steps = " << n_time_steps
        << "\nTime loop..." << endl;
-
-  const int N = x_0.Size();
 
   for (int time_step = 1; time_step <= n_time_steps; ++time_step)
   {
@@ -212,9 +225,9 @@ void ElasticWave2D::online_stage(Method method)
     Vector y = x_1; y *= 2.0; y -= x_2;        // y = 2*x_1 - x_2
 
     Vector z0; z0.SetSize(N);                  // z0 = M * (2*x_1 - x_2)
-    if (method == FEM)
+    if (param.method == 0) // FEM
       M.Mult(y, z0);
-    else if (method == SEM)
+    else if (param.method == 1) // SEM
       for (int i = 0; i < N; ++i) z0[i] = (*diagM)[i] * y[i];
 
     Vector z1; z1.SetSize(N); S.Mult(x_1, z1); // z1 = S * x_1
@@ -224,9 +237,9 @@ void ElasticWave2D::online_stage(Method method)
     y = z1; y -= z2; y *= param.dt*param.dt;   // y = dt^2 * (S*x_1 - r*b)
 
     Vector RHS = z0; RHS -= y;                 // RHS = M*(2*x_1-x_2) - dt^2*(S*x_1-r*b)
-    if (method == FEM)
+    if (param.method == 0) // FEM
       PCG(M, *prec, RHS, x_0, 0, 200, 1e-12, 0.0);
-    else if (method == SEM)
+    else if (param.method == 1) // SEM
       for (int i = 0; i < N; ++i) x_0[i] = RHS[i] / (*diagM)[i];
 
     // Compute and print the L^2 norm of the error
@@ -239,8 +252,8 @@ void ElasticWave2D::online_stage(Method method)
     x_0.GetNodalValues(nodal_values_y, 2);
 
     if (time_step % param.step_snap == 0)
-      save_vts(time_step, "displ", param.sx, param.sy, param.nx, param.ny,
-               nodal_values_x, nodal_values_y);
+      save_vts(snapshot_filebase, time_step, "U", param.sx, param.sy, param.nx,
+               param.ny, nodal_values_x, nodal_values_y);
 
     for (int i = 0; i < param.nx+1; ++i)
     {

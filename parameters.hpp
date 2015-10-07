@@ -67,6 +67,8 @@ public:
 
   int step_snap; // time step for outputting snapshots (every *th time step)
 
+  int method; // 0 - FEM, 1 - SEM
+
 
 private:
   Parameters(const Parameters&); // no copies

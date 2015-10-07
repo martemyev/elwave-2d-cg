@@ -15,7 +15,7 @@ Source::Source()
   , ricker_scale(1.0)
   , point_force_scale(1.0)
   , gauss_support(1.0)
-  , Mxx(1.0), Mxy(0.0), Myy(1.0)
+  , Mxx(1.0), Mxy(0.0), Myy(1.0) // explosive source
   , type(1)
 { }
 
@@ -116,6 +116,7 @@ Parameters::Parameters()
   , topsurf(1)
   , source()
   , step_snap(1000)
+  , method(1)
 { }
 
 Parameters::~Parameters()
@@ -159,6 +160,8 @@ void Parameters::init(int argc, char **argv)
   args.AddOption(&source.type, "-st", "--source-type", "Type of spatial source distribution (0 delta, 1 gauss)");
 
   args.AddOption(&step_snap, "-step-snap", "--step-snap", "Time step for outputting snapshots");
+
+  args.AddOption(&method, "-method", "--method", "0 - FEM, 1 - SEM");
 
   args.Parse();
   if (!args.Good())

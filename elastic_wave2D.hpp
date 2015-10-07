@@ -69,11 +69,7 @@ public:
   ElasticWave2D(const Parameters& _param);
   ~ElasticWave2D();
 
-  enum Method { FEM, SEM };
-
-  void run_FEM();
-  void run_SEM();
-
+  void run();
 
 private:
   const Parameters& param;
@@ -83,6 +79,10 @@ private:
   mfem::FiniteElementSpace *fespace;
   mfem::BilinearForm *stif;
   mfem::BilinearForm *mass;
+
+  CWConstCoefficient *rho_coef;
+  CWConstCoefficient *lambda_coef;
+  CWConstCoefficient *mu_coef;
 
   mfem::ElasticityIntegrator *elast_int;
   mfem::VectorMassIntegrator *mass_int;
@@ -94,7 +94,7 @@ private:
   mfem::LinearForm *b;
 
   void offline_stage();
-  void online_stage(Method method);
+  void online_stage();
 };
 
 #endif // ELWAVE2D_HPP

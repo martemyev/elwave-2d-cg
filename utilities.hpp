@@ -1,12 +1,10 @@
 #ifndef UTILITIES_HPP
 #define UTILITIES_HPP
 
+#include "config.hpp"
+
 #include <sstream>
 #include <stdexcept>
-
-#ifndef nullptr
-  #define nullptr NULL
-#endif
 
 namespace mfem
 {
@@ -18,30 +16,38 @@ namespace mfem
  * @param data - the data
  * @param scientific - use scientific (exponential) format or not
  * @param precision - if scientific format is used, we can change the precision
+ * @param noperiod - if true and the floating point number is being converted,
+ * the period separating the number is removed
+ * @param width - the width of a resulting string (filled with 0 if the number
+ * is shorter)
  * @return data in string format
  */
 template <typename T>
 inline std::string d2s(T data,
                        bool scientific = false,
-                       int precision = 6,
-                       bool noperiod = false)
+                       int precision = 0,
+                       bool noperiod = false,
+                       int width = 0)
 {
+  const char filler = '0';
   std::ostringstream o;
-  if (scientific)
-  {
-    o.setf(std::ios::scientific);
-    o.precision(precision);
-  }
+  if (scientific)    o.setf(std::ios::scientific);
+  if (precision > 0) o.precision(precision);
+  if (width > 0)     o << std::setfill(filler) << std::setw(width);
 
   if (!(o << data))
     throw std::runtime_error("Bad conversion of data to string!");
 
-  if (noperiod) // eliminate a period in case of 'double' numbers
+  // eliminate a period in case of floating-point numbers in non-scientific
+  // format
+  if (!scientific && noperiod)
   {
     std::string res = o.str(); // resulting string
     std::string::size_type pos = res.find('.');
     if (pos != std::string::npos)
       res.erase(pos, 1);
+    if (width > 0 && static_cast<int>(res.size()) < width)
+      res.insert(0, width-res.size(), filler);
     return res;
   }
 
@@ -69,9 +75,8 @@ void write_binary(const char *filename, int n_values, double *values);
 void get_minmax(double *a, int n_elements, double &min_val, double &max_val);
 
 /**
- * Save a snapshot of a wavefield in a VTS format
- * @param filebase - base for naming the output file
- * @param time_step - number of a time step (for naming the output file)
+ * Write a snapshot of a wavefield in a VTS format
+ * @param filename - output file name
  * @param solname - name of the wavefield
  * @param sx - size of domain in x-direction
  * @param sy - size of domain in y-direction
@@ -80,8 +85,8 @@ void get_minmax(double *a, int n_elements, double &min_val, double &max_val);
  * @param sol_x - x-component of the vector wavefield
  * @param sol_y - y-component of the vector wavefield
  */
-void save_vts(const std::string& filebase, int time_step,
-              const std::string& solname, double sx, double sy, int nx, int ny,
-              const mfem::Vector& sol_x, const mfem::Vector& sol_y);
+void write_vts(const std::string& filename, const std::string& solname,
+               double sx, double sy, int nx, int ny,
+               const mfem::Vector& sol_x, const mfem::Vector& sol_y);
 
 #endif // UTILITIES_HPP

@@ -1,6 +1,7 @@
 #ifndef ELWAVE2D_HPP
 #define ELWAVE2D_HPP
 
+#include "config.hpp"
 #include "mfem.hpp"
 
 class Parameters;

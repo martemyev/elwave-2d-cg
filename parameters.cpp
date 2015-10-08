@@ -1,4 +1,5 @@
 #include "parameters.hpp"
+#include "receivers.hpp"
 #include "utilities.hpp"
 
 using namespace std;
@@ -18,6 +19,32 @@ Source::Source()
   , Mxx(1.0), Mxy(0.0), Myy(1.0) // explosive source
   , type(1)
 { }
+
+void Source::AddOptions(OptionsParser& args)
+{
+//  args.AddOption(&source.location(0), "-srcx", "--source-x", "x-coord of a source location");
+//  args.AddOption(&source.location(1), "-srcy", "--source-y", "y-coord of a source location");
+//  args.AddOption(&source.frequency, "-f0", "--frequency", "Central frequency of a source");
+//  args.AddOption(&source.angle, "-angle", "--angle", "Angle of a source force vector in degrees (0 is horizontal)");
+//  args.AddOption(&source.ricker_scale, "-rs", "--ricker-scale", "Factor for the Ricker wavelet");
+//  args.AddOption(&source.point_force_scale, "-pfs", "--point-force-scale", "Factor for the point force term of a source");
+//  args.AddOption(&source.gauss_support, "-gs", "--gauss-support", "Gauss support for Gaussian space functions of a source");
+//  args.AddOption(&source.Mxx, "-mxx", "--moment-tensor-xx", "xx-component of a moment tensor source");
+//  args.AddOption(&source.Mxy, "-mxy", "--moment-tensor-xy", "xy-component of a moment tensor source");
+//  args.AddOption(&source.Myy, "-myy", "--moment-tensor-yy", "yy-component of a moment tensor source");
+//  args.AddOption(&source.type, "-st", "--source-type", "Type of spatial source distribution (0 delta, 1 gauss)");
+  args.AddOption(&location(0), "-srcx", "--source-x", "x-coord of a source location");
+  args.AddOption(&location(1), "-srcy", "--source-y", "y-coord of a source location");
+  args.AddOption(&frequency, "-f0", "--frequency", "Central frequency of a source");
+  args.AddOption(&angle, "-angle", "--angle", "Angle of a source force vector in degrees (0 is horizontal)");
+  args.AddOption(&ricker_scale, "-rs", "--ricker-scale", "Factor for the Ricker wavelet");
+  args.AddOption(&point_force_scale, "-pfs", "--point-force-scale", "Factor for the point force term of a source");
+  args.AddOption(&gauss_support, "-gs", "--gauss-support", "Gauss support for Gaussian space functions of a source");
+  args.AddOption(&Mxx, "-mxx", "--moment-tensor-xx", "xx-component of a moment tensor source");
+  args.AddOption(&Mxy, "-mxy", "--moment-tensor-xy", "xy-component of a moment tensor source");
+  args.AddOption(&Myy, "-myy", "--moment-tensor-yy", "yy-component of a moment tensor source");
+  args.AddOption(&type, "-st", "--source-type", "Type of spatial source distribution (0 delta, 1 gauss)");
+}
 
 double Source::Ricker(double t) const
 {
@@ -117,10 +144,15 @@ Parameters::Parameters()
   , source()
   , step_snap(1000)
   , method(1)
+  , extra_string("")
+  , receivers_file(DEFAULT_FILE_NAME)
 { }
 
 Parameters::~Parameters()
 {
+  for (size_t i = 0; i < sets_of_receivers.size(); ++i)
+    delete sets_of_receivers[i];
+
   delete[] vs_array;
   delete[] vp_array;
   delete[] rho_array;
@@ -147,21 +179,15 @@ void Parameters::init(int argc, char **argv)
   args.AddOption(&damp_layer, "-damp", "--damp-layer", "Thickness of damping layer, m");
   args.AddOption(&topsurf, "-top", "--top-surface", "Top surface: 0 absorbing, 1 free");
 
-  args.AddOption(&source.location(0), "-srcx", "--source-x", "x-coord of a source location");
-  args.AddOption(&source.location(1), "-srcy", "--source-y", "y-coord of a source location");
-  args.AddOption(&source.frequency, "-f0", "--frequency", "Central frequency of a source");
-  args.AddOption(&source.angle, "-angle", "--angle", "Angle of a source force vector in degrees (0 is horizontal)");
-  args.AddOption(&source.ricker_scale, "-rs", "--ricker-scale", "Factor for the Ricker wavelet");
-  args.AddOption(&source.point_force_scale, "-pfs", "--point-force-scale", "Factor for the point force term of a source");
-  args.AddOption(&source.gauss_support, "-gs", "--gauss-support", "Gauss support for Gaussian space functions of a source");
-  args.AddOption(&source.Mxx, "-mxx", "--moment-tensor-xx", "xx-component of a moment tensor source");
-  args.AddOption(&source.Mxy, "-mxy", "--moment-tensor-xy", "xy-component of a moment tensor source");
-  args.AddOption(&source.Myy, "-myy", "--moment-tensor-yy", "yy-component of a moment tensor source");
-  args.AddOption(&source.type, "-st", "--source-type", "Type of spatial source distribution (0 delta, 1 gauss)");
+  source.AddOptions(args);
 
   args.AddOption(&step_snap, "-step-snap", "--step-snap", "Time step for outputting snapshots");
 
   args.AddOption(&method, "-method", "--method", "0 - FEM, 1 - SEM");
+
+  args.AddOption(&extra_string, "-extra", "--extra", "Extra string for naming output files");
+
+  args.AddOption(&receivers_file, "-rec-file", "--receivers-file", "File with information about receivers");
 
   args.Parse();
   if (!args.Good())
@@ -217,4 +243,26 @@ void Parameters::init(int argc, char **argv)
 
   if (damp_layer < 2.5*min_wavelength)
     mfem_warning("damping layer for absorbing bc should be about 3*wavelength");
+
+  ifstream in(receivers_file);
+  MFEM_VERIFY(in, "The file '" + string(receivers_file) + "' can't be opened");
+  string line; // we read the file line-by-line
+  string type; // type of the set of receivers
+  while (getline(in, line))
+  {
+    // ignore empty lines and lines starting from '#'
+    if (line.empty() || line[0] == '#') continue;
+    // every meaningfull line should start with the type of the receivers set
+    istringstream iss(line);
+    iss >> type;
+    ReceiversSet *rec_set = nullptr;
+    if (type == "Line")
+      rec_set = new ReceiversLine();
+    else MFEM_ABORT("Unknown type of receivers set: " + type);
+
+    rec_set->init(in); // read the parameters
+    rec_set->distribute_receivers();
+    rec_set->find_cells_containing_receivers(nx, ny, sx, sy);
+    sets_of_receivers.push_back(rec_set); // put this set in the vector
+  }
 }

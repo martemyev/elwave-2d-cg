@@ -1,6 +1,7 @@
 #ifndef PARAMETERS_HPP
 #define PARAMETERS_HPP
 
+#include "config.hpp"
 #include "mfem.hpp"
 
 #include <string>
@@ -8,6 +9,7 @@
 
 static const char* DEFAULT_FILE_NAME = "no-file";
 
+class ReceiversSet;
 
 
 class Source
@@ -23,6 +25,8 @@ public:
   double gauss_support;
   double Mxx, Mxy, Myy; // components of a moment tensor
   int type; // 0 - Delta function, 1 - Gaussian function
+
+  void AddOptions(mfem::OptionsParser& args);
 
   double Ricker(double t) const;
   void PointForce(const mfem::Vector& x, mfem::Vector& f) const;
@@ -68,6 +72,11 @@ public:
   int step_snap; // time step for outputting snapshots (every *th time step)
 
   int method; // 0 - FEM, 1 - SEM
+
+  const char *extra_string;
+
+  const char *receivers_file;
+  std::vector<ReceiversSet*> sets_of_receivers;
 
 
 private:

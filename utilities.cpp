@@ -85,11 +85,10 @@ void get_minmax(double *a, int n_elements, double &min_val, double &max_val)
 
 
 
-void save_vts(const std::string& filebase, int time_step,
-              const std::string& solname, double sx, double sy, int nx, int ny,
-              const Vector& sol_x, const Vector& sol_y)
+void write_vts(const std::string& filename, const std::string& solname,
+               double sx, double sy, int nx, int ny,
+               const Vector& sol_x, const Vector& sol_y)
 {
-  const string filename = filebase + "_" + d2s(time_step) + ".vts";
   ofstream out(filename.c_str());
   MFEM_VERIFY(out, "File '" + filename + "' can't be opened");
 

@@ -1,6 +1,7 @@
 #include "elastic_wave2D.hpp"
 #include "GLL_quadrature.hpp"
 #include "parameters.hpp"
+#include "receivers.hpp"
 #include "utilities.hpp"
 
 #include <fstream>
@@ -269,6 +270,27 @@ void ElasticWave2D::offline_stage()
   b->AddDomainIntegrator(moment_tensor_int);
 }
 
+Vector compute_solution_at_points(const vector<Vertex>& points,
+                                  const vector<int>& cells_containing_points,
+                                  const GridFunction& U)
+{
+  MFEM_ASSERT(points.size() == cells_containing_points.size(), "Sizes mismatch");
+  Vector U_at_points(2*points.size());
+  Vector values(2);
+  IntegrationPoint ip;
+  for (size_t p = 0; p < points.size(); ++p)
+  {
+    ip.x = points[p](0);
+    ip.y = points[p](1);
+    ip.z = points[p](2);
+    U.GetVectorValue(cells_containing_points[p], ip, values);
+    MFEM_ASSERT(values.Size() == 2, "Unexpected vector size");
+    U_at_points(2*p+0) = values(0);
+    U_at_points(2*p+1) = values(1);
+  }
+  return U_at_points;
+}
+
 void ElasticWave2D::online_stage()
 {
   stif->Assemble();
@@ -290,7 +312,6 @@ void ElasticWave2D::online_stage()
 //  ofstream mout("mass_mat.dat");
 //  mass->PrintMatlab(mout);
   cout << "M.nnz = " << M.NumNonZeroElems() << endl;
-
 
   SparseMatrix *Sys = nullptr;
   GSSmoother *prec = nullptr;
@@ -323,95 +344,163 @@ void ElasticWave2D::online_stage()
   b->Assemble();
   cout << "||b||_L2 = " << b->Norml2() << endl;
 
-  const double hy = param.sy / param.ny;
-  const int rec_y_index = RECEIVER_Y / hy;
+  const string method_name = (param.method == 0 ? "FEM_" : "SEM_");
 
-  ofstream solout_x("seis0.bin", std::ios::binary);
-  ofstream solout_y("seis1.bin", std::ios::binary);
+  int n_rec_sets = param.sets_of_receivers.size();
+  ofstream *seisU = new ofstream[N_ELAST_COMPONENTS*n_rec_sets]; // for displacement
+  ofstream *seisV = new ofstream[N_ELAST_COMPONENTS*n_rec_sets]; // for velocity
+  for (int r = 0; r < n_rec_sets; ++r)
+  {
+    const string desc = param.sets_of_receivers[r]->description();
+    for (int c = 0; c < N_ELAST_COMPONENTS; ++c)
+    {
+      string seismofile = method_name + param.extra_string + desc + "_u" + d2s(c) + ".bin";
+      seisU[r*N_ELAST_COMPONENTS + c].open(seismofile.c_str(), ios::binary);
+      MFEM_VERIFY(seisU[r*N_ELAST_COMPONENTS + c], "File '" + seismofile +
+                  "' can't be opened");
 
-  GridFunction x_0(fespace);
-  GridFunction x_1(fespace);
-  GridFunction x_2(fespace);
-  x_0 = 0.0;
-  x_1 = 0.0;
-  x_2 = 0.0;
+      seismofile = method_name + param.extra_string + desc + "_v" + d2s(c) + ".bin";
+      seisV[r*N_ELAST_COMPONENTS + c].open(seismofile.c_str(), ios::binary);
+      MFEM_VERIFY(seisV[r*N_ELAST_COMPONENTS + c], "File '" + seismofile +
+                  "' can't be opened");
+    } // loop for components
+  } // loop for sets of receivers
+
+  GridFunction u_0(fespace); // displacement
+  GridFunction u_1(fespace);
+  GridFunction u_2(fespace);
+  GridFunction v_1(fespace); // velocity
+  u_0 = 0.0;
+  u_1 = 0.0;
+  u_2 = 0.0;
 
   Vector tmp;
-  x_0.GetNodalValues(tmp, 1);
+  u_0.GetNodalValues(tmp, 1);
   cout << "nodal values size = " << tmp.Size() << endl;
 
   const int n_time_steps = ceil(param.T / param.dt);
   const int tenth = 0.1 * n_time_steps;
 
-  const string method_name = (param.method == 0 ? "FEM" : "SEM");
-  const string snapshot_filebase = method_name + "_o" + d2s(param.order);
-  const int N = x_0.Size();
+  const string snapshot_filebase = method_name + param.extra_string;
+  const int N = u_0.Size();
 
   cout << "N time steps = " << n_time_steps
        << "\nTime loop..." << endl;
 
+  int nbytes = 0;
   for (int time_step = 1; time_step <= n_time_steps; ++time_step)
   {
     const double cur_time = time_step * param.dt;
 
     const double r = param.source.Ricker(cur_time - param.dt);
 
-    Vector y = x_1; y *= 2.0; y -= x_2;        // y = 2*x_1 - x_2
+    Vector y = u_1; y *= 2.0; y -= u_2;        // y = 2*u_1 - u_2
 
-    Vector z0; z0.SetSize(N);                  // z0 = M * (2*x_1 - x_2)
+    Vector z0; z0.SetSize(N);                  // z0 = M * (2*u_1 - u_2)
     if (param.method == 0) // FEM
       M.Mult(y, z0);
     else if (param.method == 1) // SEM
       for (int i = 0; i < N; ++i) z0[i] = (*diagM)[i] * y[i];
 
-    Vector z1; z1.SetSize(N); S.Mult(x_1, z1); // z1 = S * x_1
+    Vector z1; z1.SetSize(N); S.Mult(u_1, z1); // z1 = S * u_1
 
     Vector z2 = *b; z2 *= r;                   // z2 = r * b
 
-    y = z1; y -= z2; y *= param.dt*param.dt;   // y = dt^2 * (S*x_1 - r*b)
+    y = z1; y -= z2; y *= param.dt*param.dt;   // y = dt^2 * (S*u_1 - r*b)
 
-    Vector RHS = z0; RHS -= y;                 // RHS = M*(2*x_1-x_2) - dt^2*(S*x_1-r*b)
+    Vector RHS = z0; RHS -= y;                 // RHS = M*(2*u_1-u_2) - dt^2*(S*u_1-r*b)
 
     if (param.method == 0) // FEM
     {
-      D.Mult(x_2, y);                          // y = D * x_2
-      RHS += y;                                // RHS = M*(2*x_1-x_2) - dt^2*(S*x_1-r*b) + D*x_2
-      // (M+D)*x_0 = M*(2*x_1-x_2) - dt^2*(S*x_1-r*b) + D*x_2
-      PCG(*Sys, *prec, RHS, x_0, 0, 200, 1e-12, 0.0);
+      D.Mult(u_2, y);                          // y = D * u_2
+      RHS += y;                                // RHS = M*(2*u_1-u_2) - dt^2*(S*u_1-r*b) + D*u_2
+      // (M+D)*u_0 = M*(2*u_1-u_2) - dt^2*(S*u_1-r*b) + D*u_2
+      PCG(*Sys, *prec, RHS, u_0, 0, 200, 1e-12, 0.0);
     }
     else if (param.method == 1) // SEM
     {
-      for (int i = 0; i < N; ++i) y[i] = (*diagD)[i] * x_2[i]; // y = D * x_2
-      RHS += y;                                                // RHS = M*(2*x_1-x_2) - dt^2*(S*x_1-r*b) + D*x_2
+      for (int i = 0; i < N; ++i) y[i] = (*diagD)[i] * u_2[i]; // y = D * u_2
+      RHS += y;                                                // RHS = M*(2*u_1-u_2) - dt^2*(S*u_1-r*b) + D*u_2
       // (M+D)*x_0 = M*(2*x_1-x_2) - dt^2*(S*x_1-r*b) + D*x_2
-      for (int i = 0; i < N; ++i) x_0[i] = RHS[i] / ((*diagM)[i]+(*diagD)[i]);
+      for (int i = 0; i < N; ++i) u_0[i] = RHS[i] / ((*diagM)[i]+(*diagD)[i]);
     }
+
+    // velocity
+    v_1  = u_0;
+    v_1 -= u_2;
+    v_1 /= 2.0*param.dt;
 
     // Compute and print the L^2 norm of the error
     if (time_step % tenth == 0)
       cout << "step " << time_step << " / " << n_time_steps
-           << " ||solution||_{L^2} = " << x_0.Norml2() << endl;
-
-    Vector nodal_values_x, nodal_values_y;
-    x_0.GetNodalValues(nodal_values_x, 1);
-    x_0.GetNodalValues(nodal_values_y, 2);
+           << " ||solution||_{L^2} = " << u_0.Norml2() << endl;
 
     if (time_step % param.step_snap == 0)
-      save_vts(snapshot_filebase, time_step, "U", param.sx, param.sy, param.nx,
-               param.ny, nodal_values_x, nodal_values_y);
-
-    for (int i = 0; i < param.nx+1; ++i)
     {
-      float val_x = nodal_values_x(rec_y_index*(param.nx+1)+i);
-      float val_y = nodal_values_y(rec_y_index*(param.nx+1)+i);
-      solout_x.write((char*)&val_x, sizeof(val_x));
-      solout_y.write((char*)&val_y, sizeof(val_y));
+      Vector u_x, u_y, v_x, v_y;
+      u_0.GetNodalValues(u_x, 1);
+      u_0.GetNodalValues(u_y, 2);
+      v_1.GetNodalValues(v_x, 1);
+      v_1.GetNodalValues(v_y, 2);
+
+      string tstep = d2s(time_step,0,0,0,6);
+      string fname = snapshot_filebase + "_U_t" + tstep + ".vts";
+      write_vts(fname, "U", param.sx, param.sy, param.nx, param.ny, u_x, u_y);
+      fname = snapshot_filebase + "_V_t" + tstep + ".vts";
+      write_vts(fname, "V", param.sx, param.sy, param.nx, param.ny, v_x, v_y);
+      fname = snapshot_filebase + "_Ux_t" + tstep + ".bin";
+      write_binary(fname.c_str(), u_x.Size(), u_x);
+      fname = snapshot_filebase + "_Uy_t" + tstep + ".bin";
+      write_binary(fname.c_str(), u_y.Size(), u_y);
+      fname = snapshot_filebase + "_Vx_t" + tstep + ".bin";
+      write_binary(fname.c_str(), v_x.Size(), v_x);
+      fname = snapshot_filebase + "_Vy_t" + tstep + ".bin";
+      write_binary(fname.c_str(), v_y.Size(), v_y);
     }
 
-    x_2 = x_1;
-    x_1 = x_0;
+    // for each set of receivers
+    for (int rec = 0; rec < n_rec_sets; ++rec)
+    {
+      const ReceiversSet *rec_set = param.sets_of_receivers[rec];
+      const Vector U_0 = compute_solution_at_points(rec_set->get_receivers(),
+                                                    rec_set->get_cells_containing_receivers(),
+                                                    u_0);
+      const Vector U_2 = compute_solution_at_points(rec_set->get_receivers(),
+                                                    rec_set->get_cells_containing_receivers(),
+                                                    u_2);
+
+      MFEM_ASSERT(U_0.Size() == N_ELAST_COMPONENTS*rec_set->n_receivers(),
+                  "Sizes mismatch");
+      Vector V_1 = U_0;
+      V_1 -= U_2;
+      V_1 /= 2.0*param.dt; // central difference
+
+      float val;
+      int n_loc_bytes = 0;
+      for (int i = 0; i < U_0.Size(); i += N_ELAST_COMPONENTS)
+      {
+        for (int j = 0; j < N_ELAST_COMPONENTS; ++j)
+        {
+          val = U_0(i+j);
+          seisU[rec*N_ELAST_COMPONENTS + j].write(reinterpret_cast<char*>(&val), sizeof(val));
+//          cout << sizeof(val);
+
+          val = V_1(i+j);
+          seisV[rec*N_ELAST_COMPONENTS + j].write(reinterpret_cast<char*>(&val), sizeof(val));
+        }
+        n_loc_bytes += sizeof(float);
+        nbytes += sizeof(float);
+      }
+
+      cout << n_loc_bytes << endl;
+    } // for each set of receivers
+
+    u_2 = u_1;
+    u_1 = u_0;
   }
 
+
+  cout << "nbytes = " << nbytes <<endl;
   cout << "Time loop is over" << endl;
 
   delete diagD;

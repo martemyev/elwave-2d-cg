@@ -1,3 +1,4 @@
+#include "config.hpp"
 #include "elastic_wave2D.hpp"
 #include "mfem.hpp"
 #include "parameters.hpp"
@@ -13,6 +14,12 @@ int main(int argc, char *argv[])
     cout << "\nGet help with:\n" << argv[0] << " -h\n" << endl;
     return 0;
   }
+
+#if defined(DEBUG_WAVE)
+  cout << "****************************\n";
+  cout << "*     DEBUG VERSION        *\n";
+  cout << "****************************\n";
+#endif
 
   try
   {

@@ -387,7 +387,6 @@ void ElasticWave2D::online_stage()
   cout << "N time steps = " << n_time_steps
        << "\nTime loop..." << endl;
 
-  int nbytes = 0;
   for (int time_step = 1; time_step <= n_time_steps; ++time_step)
   {
     const double cur_time = time_step * param.dt;
@@ -476,31 +475,26 @@ void ElasticWave2D::online_stage()
       V_1 /= 2.0*param.dt; // central difference
 
       float val;
-      int n_loc_bytes = 0;
       for (int i = 0; i < U_0.Size(); i += N_ELAST_COMPONENTS)
       {
         for (int j = 0; j < N_ELAST_COMPONENTS; ++j)
         {
           val = U_0(i+j);
           seisU[rec*N_ELAST_COMPONENTS + j].write(reinterpret_cast<char*>(&val), sizeof(val));
-//          cout << sizeof(val);
 
           val = V_1(i+j);
           seisV[rec*N_ELAST_COMPONENTS + j].write(reinterpret_cast<char*>(&val), sizeof(val));
         }
-        n_loc_bytes += sizeof(float);
-        nbytes += sizeof(float);
       }
-
-      cout << n_loc_bytes << endl;
     } // for each set of receivers
 
     u_2 = u_1;
     u_1 = u_0;
   }
 
+  delete[] seisV;
+  delete[] seisU;
 
-  cout << "nbytes = " << nbytes <<endl;
   cout << "Time loop is over" << endl;
 
   delete diagD;

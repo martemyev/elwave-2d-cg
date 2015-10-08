@@ -18,7 +18,7 @@ double to_radians(double x)
 
 void read_binary(const char *filename, int n_values, double *values)
 {
-  std::ifstream in(filename, std::ios::binary);
+  ifstream in(filename, ios::binary);
   MFEM_VERIFY(in, "File '" + string(filename) + "' can't be opened");
 
   in.seekg(0, in.end); // jump to the end of the file
@@ -53,6 +53,22 @@ void read_binary(const char *filename, int n_values, double *values)
                    d2s(sizeof(double)));
 
   in.close();
+}
+
+
+
+void write_binary(const char *filename, int n_values, double *values)
+{
+  ofstream out(filename, ios::binary);
+  MFEM_VERIFY(out, "File '" + string(filename) + "' can't be opened");
+
+  for (int i = 0; i < n_values; ++i)
+  {
+    float val = values[i];
+    out.write(reinterpret_cast<char*>(&val), sizeof(float));
+  }
+
+  out.close();
 }
 
 

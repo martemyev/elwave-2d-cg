@@ -1,8 +1,9 @@
 #include "elastic_wave2D.hpp"
+#include "mfem.hpp"
 #include "parameters.hpp"
 
 using namespace std;
-
+using namespace mfem;
 
 
 int main(int argc, char *argv[])
@@ -15,11 +16,16 @@ int main(int argc, char *argv[])
 
   try
   {
+    StopWatch chrono;
+    chrono.Start();
+
     Parameters param;
     param.init(argc, argv);
 
     ElasticWave2D elwave(param);
     elwave.run();
+
+    cout << "\nTOTAL TIME " << chrono.RealTime() << " sec\n" << endl;
   }
   catch (int ierr)
   {
@@ -32,70 +38,6 @@ int main(int argc, char *argv[])
 
   return 0;
 }
-
-
-
-void compute_rayleigh_damping_weights(int n_elements_x,
-                                      int n_elements_y,
-                                      double left_boundary,
-                                      double right_boundary,
-                                      double bottom_boundary,
-                                      double top_boundary,
-                                      double abs_layer_width,
-                                      bool left, bool right,
-                                      bool bottom, bool top,
-                                      double *damping_weights)
-{
-  const double p = 1.2;
-
-  const double hx = (right_boundary - left_boundary) / n_elements_x;
-  const double hy = (top_boundary - bottom_boundary) / n_elements_y;
-
-  for (int ely = 0; ely < n_elements_y; ++ely)
-  {
-    const double y = bottom_boundary + (ely+0.5)*hy; // center of a cell
-    for (int elx = 0; elx < n_elements_x; ++elx)
-    {
-      const double x = left_boundary + (elx+0.5)*hx; // center of a cell
-
-      double weight = 1e-8; // don't take 0, because of sparse matrix pattern
-
-      if (left && x - abs_layer_width < left_boundary)
-        weight += pow((left_boundary-(x-abs_layer_width))/abs_layer_width, p);
-      else if (right && x + abs_layer_width > right_boundary)
-        weight += pow((x+abs_layer_width-right_boundary)/abs_layer_width, p);
-
-      if (bottom && y - abs_layer_width < bottom_boundary)
-        weight += pow((bottom_boundary-(y-abs_layer_width))/abs_layer_width, p);
-      else if (top && y + abs_layer_width > top_boundary)
-        weight += pow((y+abs_layer_width-top_boundary)/abs_layer_width, p);
-
-      const int el = ely*n_elements_x + elx;
-      damping_weights[el] = weight;
-    }
-  }
-}
-
-
-
-
-
-
-
-void get_damp_alphas(double source_frequency, double &alpha1, double &alpha2)
-{
-  // These numbers have been obtained by Shubin Fu and Kai Gao, while they've
-  // been PhD students at Texas A&M.
-  const double w1 = 0.7 * source_frequency;
-  const double w2 = 20. * source_frequency;
-  const double xi1 = 4.5;
-  const double xi2 = 0.6;
-
-  alpha1 = 2.*w1*w2*(xi2*w1-xi1*w2)/(w1*w1-w2*w2);
-  alpha2 = 2.*(xi1*w1-xi2*w2)/(w1*w1-w2*w2);
-}
-
-
 
 /*
 void test_polynomials()

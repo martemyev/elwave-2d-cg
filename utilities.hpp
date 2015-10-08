@@ -59,6 +59,11 @@ double to_radians(double x);
 void read_binary(const char *filename, int n_values, double *values);
 
 /**
+ * Write a binary file
+ */
+void write_binary(const char *filename, int n_values, double *values);
+
+/**
  * Find min and max values of the given array (vector) a
  */
 void get_minmax(double *a, int n_elements, double &min_val, double &max_val);

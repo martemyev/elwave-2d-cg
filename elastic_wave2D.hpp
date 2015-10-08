@@ -79,13 +79,16 @@ private:
   mfem::FiniteElementSpace *fespace;
   mfem::BilinearForm *stif;
   mfem::BilinearForm *mass;
+  mfem::BilinearForm *damp;
 
   CWConstCoefficient *rho_coef;
   CWConstCoefficient *lambda_coef;
   CWConstCoefficient *mu_coef;
+  CWConstCoefficient *rho_w_coef;
 
   mfem::ElasticityIntegrator *elast_int;
   mfem::VectorMassIntegrator *mass_int;
+  mfem::VectorMassIntegrator *damp_int;
   VectorPointForce *vector_point_force;
   MomentTensorSource *momemt_tensor_source;
   mfem::VectorDomainLFIntegrator *point_force_int;

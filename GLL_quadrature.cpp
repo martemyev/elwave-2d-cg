@@ -86,6 +86,14 @@ void segment_GLL_quadrature(int p, Vector& x, Vector& w, double tol,
     w[i] = 2.0 / (n*(n-1)*P[(n-1)*n+i]*P[(n-1)*n+i]);
 
   delete[] P;
+
+  // sort x from -1 to 1, because currently it's from 1 to -1: this requires
+  // n/2 swaps
+  for (int i = 0; i < n/2; ++i)
+  {
+    swap(x[i], x[n-1-i]);
+    swap(w[i], w[n-1-i]); // this is most likely redundant
+  }
 }
 
 

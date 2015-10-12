@@ -7,122 +7,114 @@
 using namespace std;
 using namespace mfem;
 
+void compute_damping_weights(const Parameters& param, double *damping_weights);
+void get_damp_alphas(double source_frequency, double &alpha1, double &alpha2);
 
-void get_damp_alphas(double source_frequency, double &alpha1, double &alpha2)
-{
-  // These numbers have been obtained by Shubin Fu and Kai Gao, while they've
-  // been PhD students at Texas A&M.
-  const double w1 = 0.7 * source_frequency;
-  const double w2 = 20. * source_frequency;
-  const double xi1 = 4.5;
-  const double xi2 = 0.6;
 
-  alpha1 = 2.*w1*w2*(xi2*w1-xi1*w2)/(w1*w1-w2*w2);
-  alpha2 = 2.*(xi1*w1-xi2*w2)/(w1*w1-w2*w2);
-}
 
 void ElasticWave2D::run_FEM_ALID()
 {
   bool generate_edges = 1;
-  mesh = new Mesh(param.nx, param.ny, Element::QUADRILATERAL, generate_edges,
-                  param.sx, param.sy);
-  const int dim = mesh->Dimension();
-  MFEM_VERIFY(param.nx*param.ny == mesh->GetNE(), "Unexpected number of mesh "
+  Mesh mesh(param.nx, param.ny, Element::QUADRILATERAL, generate_edges,
+            param.sx, param.sy);
+  const int dim = mesh.Dimension();
+  MFEM_VERIFY(param.nx*param.ny == mesh.GetNE(), "Unexpected number of mesh "
               "elements");
 
-  fec = new H1_FECollection(param.order, dim);
-  fespace = new FiniteElementSpace(mesh, fec, dim, Ordering::byVDIM);
-  cout << "Number of unknowns: " << fespace->GetVSize() << endl;
+  FiniteElementCollection *fec = new H1_FECollection(param.order, dim);
+  FiniteElementSpace fespace(&mesh, fec, dim, Ordering::byVDIM);
+  cout << "Number of unknowns: " << fespace.GetVSize() << endl;
 
   const int n_elements = param.nx*param.ny;
   double *lambda_array = new double[n_elements];
   double *mu_array     = new double[n_elements];
+
+  double *damp_weights = new double[n_elements];
+  compute_damping_weights(param, damp_weights);
+
+  double *rho_w_array   = new double[n_elements];
+  double *lambda_w_array= new double[n_elements];
+  double *mu_w_array    = new double[n_elements];
 
   for (int i = 0; i < n_elements; ++i)
   {
     const double rho = param.rho_array[i];
     const double vp  = param.vp_array[i];
     const double vs  = param.vs_array[i];
+    const double w   = damp_weights[i];
 
     lambda_array[i]  = rho*(vp*vp - 2.*vs*vs);
     mu_array[i]      = rho*vs*vs;
+
+    rho_w_array[i]   = rho*w;
+    lambda_w_array[i]= lambda_array[i]*w;
+    mu_w_array[i]    = mu_array[i]*w;
   }
 
-  rho_coef    = new CWConstCoefficient(param.rho_array, 0);
-  lambda_coef = new CWConstCoefficient(lambda_array);
-  mu_coef     = new CWConstCoefficient(mu_array);
+  CWConstCoefficient rho_coef(param.rho_array, 0);
+  CWConstCoefficient lambda_coef(lambda_array);
+  CWConstCoefficient mu_coef(mu_array);
 
-  rho_damp_coef    = new CWFunctionCoefficient(mass_damp_weight, param, param.rho_array, 0);
-  lambda_damp_coef = new CWFunctionCoefficient(mass_damp_weight, param, lambda_array, 0);
-  mu_damp_coef     = new CWFunctionCoefficient(mass_damp_weight, param, mu_array, 0);
+  CWConstCoefficient rho_w_coef(rho_w_array);
+  CWConstCoefficient lambda_w_coef(lambda_w_array);
+  CWConstCoefficient mu_w_coef(mu_w_array);
 
-  elast_int = new ElasticityIntegrator(*lambda_coef, *mu_coef);
-  stif = new BilinearForm(fespace);
-  stif->AddDomainIntegrator(elast_int);
+  BilinearForm stif(&fespace);
+  stif.AddDomainIntegrator(new ElasticityIntegrator(lambda_coef, mu_coef));
+  stif.Assemble();
+  stif.Finalize();
+  const SparseMatrix& S = stif.SpMat();
 
-  mass_int = new VectorMassIntegrator(*rho_coef);
-  mass = new BilinearForm(fespace);
-  mass->AddDomainIntegrator(mass_int);
-
-  double alpha1, alpha2;
-  get_damp_alphas(param.source.frequency, alpha1, alpha2);
-
-  dampS = new BilinearForm(fespace);
-  dampS->AddDomainIntegrator(new ElasticityIntegrator(*lambda_damp_coef, *mu_damp_coef));
-  dampS->Assemble();
-  dampS->Finalize();
-  SparseMatrix& D = dampS->SpMat();
-  D *= alpha2;
-
-  dampM = new BilinearForm(fespace);
-  dampM->AddDomainIntegrator(new VectorMassIntegrator(*rho_damp_coef));
-  dampM->Assemble();
-  dampM->Finalize();
-  SparseMatrix& DM = dampM->SpMat();
-  DM *= alpha1;
-
-  D += DM;
-  D *= 0.5*param.dt;
-
-  vector_point_force = new VectorPointForce(dim, param.source);
-  point_force_int = new VectorDomainLFIntegrator(*vector_point_force);
-
-  momemt_tensor_source = new MomentTensorSource(dim, param.source);
-  moment_tensor_int = new VectorDomainLFIntegrator(*momemt_tensor_source);
-
-  b = new LinearForm(fespace);
-  b->AddDomainIntegrator(point_force_int);
-  b->AddDomainIntegrator(moment_tensor_int);
-
-  stif->Assemble();
-  stif->Finalize();
-  const SparseMatrix& S = stif->SpMat();
-
-  mass->Assemble();
-  mass->Finalize();
-  SparseMatrix& M = mass->SpMat();
+  BilinearForm mass(&fespace);
+  mass.AddDomainIntegrator(new VectorMassIntegrator(rho_coef));
+  mass.Assemble();
+  mass.Finalize();
+  SparseMatrix& M = mass.SpMat();
 
 //  ofstream mout("mass_mat.dat");
 //  mass->PrintMatlab(mout);
   cout << "M.nnz = " << M.NumNonZeroElems() << endl;
 
-  SparseMatrix *Sys = nullptr;
-  GSSmoother *prec = nullptr;
+  double alpha1, alpha2;
+  get_damp_alphas(param.source.frequency, alpha1, alpha2);
+
+  BilinearForm dampS(&fespace);
+  dampS.AddDomainIntegrator(new ElasticityIntegrator(lambda_w_coef, mu_w_coef));
+  dampS.Assemble();
+  dampS.Finalize();
+  SparseMatrix& D = dampS.SpMat();
+  D *= alpha2;
+
+  BilinearForm dampM(&fespace);
+  dampM.AddDomainIntegrator(new VectorMassIntegrator(rho_w_coef));
+  dampM.Assemble();
+  dampM.Finalize();
+  SparseMatrix& DM = dampM.SpMat();
+  DM *= alpha1;
+
+  D += DM;
+  D *= 0.5*param.dt;
 
   const SparseMatrix& CopyFrom = D;
   const int nnz = CopyFrom.NumNonZeroElems();
   const bool ownij  = false;
   const bool ownval = true;
-  Sys = new SparseMatrix(CopyFrom.GetI(), CopyFrom.GetJ(), new double[nnz],
-                         CopyFrom.Height(), CopyFrom.Width(), ownij, ownval,
-                         CopyFrom.areColumnsSorted());
-  (*Sys) = 0.0;
-  (*Sys) += D;
-  (*Sys) += M;
-  prec = new GSSmoother(*Sys);
+  SparseMatrix Sys(CopyFrom.GetI(), CopyFrom.GetJ(), new double[nnz],
+                   CopyFrom.Height(), CopyFrom.Width(), ownij, ownval,
+                   CopyFrom.areColumnsSorted());
+  Sys = 0.0;
+  Sys += D;
+  Sys += M;
+  GSSmoother prec(Sys);
 
-  b->Assemble();
-  cout << "||b||_L2 = " << b->Norml2() << endl;
+  VectorPointForce vector_point_force(dim, param.source);
+  MomentTensorSource momemt_tensor_source(dim, param.source);
+
+  LinearForm b(&fespace);
+  b.AddDomainIntegrator(new VectorDomainLFIntegrator(vector_point_force));
+  b.AddDomainIntegrator(new VectorDomainLFIntegrator(momemt_tensor_source));
+  b.Assemble();
+  cout << "||b||_L2 = " << b.Norml2() << endl;
 
   const string method_name = "FEM_";
 
@@ -146,17 +138,13 @@ void ElasticWave2D::run_FEM_ALID()
     } // loop for components
   } // loop for sets of receivers
 
-  GridFunction u_0(fespace); // displacement
-  GridFunction u_1(fespace);
-  GridFunction u_2(fespace);
-  GridFunction v_1(fespace); // velocity
+  GridFunction u_0(&fespace); // displacement
+  GridFunction u_1(&fespace);
+  GridFunction u_2(&fespace);
+  GridFunction v_1(&fespace); // velocity
   u_0 = 0.0;
   u_1 = 0.0;
   u_2 = 0.0;
-
-  Vector tmp;
-  u_0.GetNodalValues(tmp, 1);
-  cout << "nodal values size = " << tmp.Size() << endl;
 
   const int n_time_steps = ceil(param.T / param.dt);
   const int tenth = 0.1 * n_time_steps;
@@ -179,7 +167,7 @@ void ElasticWave2D::run_FEM_ALID()
 
     Vector z1; z1.SetSize(N); S.Mult(u_1, z1); // z1 = S * u_1
 
-    Vector z2 = *b; z2 *= r;                   // z2 = r * b
+    Vector z2 = b; z2 *= r;                    // z2 = r * b
 
     y = z1; y -= z2; y *= param.dt*param.dt;   // y = dt^2 * (S*u_1 - r*b)
 
@@ -188,7 +176,7 @@ void ElasticWave2D::run_FEM_ALID()
     D.Mult(u_2, y);                            // y = D * u_2
     RHS += y;                                  // RHS = M*(2*u_1-u_2) - dt^2*(S*u_1-r*b) + D*u_2
     // (M+D)*u_0 = M*(2*u_1-u_2) - dt^2*(S*u_1-r*b) + D*u_2
-    PCG(*Sys, *prec, RHS, u_0, 0, 200, 1e-12, 0.0);
+    PCG(Sys, prec, RHS, u_0, 0, 200, 1e-12, 0.0);
 
     // velocity
     v_1  = u_0;
@@ -263,6 +251,64 @@ void ElasticWave2D::run_FEM_ALID()
 
   cout << "Time loop is over" << endl;
 
-  delete prec;
-  delete Sys;
+  delete fec;
+}
+
+
+
+void compute_damping_weights(const Parameters& param, double *damping_weights)
+{
+  bool left = true, right = true, bottom = true;
+  bool top = (param.topsurf == 0 ? true : false);
+
+  const int nx = param.nx;
+  const int ny = param.ny;
+  const double X0 = 0;
+  const double X1 = param.sx;
+  const double Y0 = 0;
+  const double Y1 = param.sy;
+  const double layer = param.damp_layer;
+  const double power = param.damp_power;
+
+  const double hx = (X1 - X0) / nx;
+  const double hy = (Y1 - Y0) / ny;
+
+  for (int ely = 0; ely < ny; ++ely)
+  {
+    const double y = Y0 + (ely+0.5)*hy; // center of a cell
+    for (int elx = 0; elx < nx; ++elx)
+    {
+      const double x = X0 + (elx+0.5)*hx; // center of a cell
+
+      double weight = 1e-12;
+
+      if (left && x - layer < X0)
+        weight += pow((X0-x+layer)/layer, power);
+      else if (right && x + layer > X1)
+        weight += pow((x+layer-X1)/layer, power);
+
+      if (bottom && y - layer < Y0)
+        weight += pow((Y0-y+layer)/layer, power);
+      else if (top && y + layer > Y1)
+        weight += pow((y+layer-Y1)/layer, power);
+
+      const int el = ely*nx + elx;
+      damping_weights[el] = weight;
+    }
+  }
+}
+
+
+
+void get_damp_alphas(double source_frequency, double &alpha1, double &alpha2)
+{
+  // These numbers have been obtained by Shubin Fu and Kai Gao, while they've
+  // been PhD students at Texas A&M.
+  const double w1 = 0.7 * source_frequency;
+  const double w2 = 20. * source_frequency;
+  const double xi1 = 4.5;
+  const double xi2 = 0.6;
+
+  alpha1 = 2.*w1*w2*(xi2*w1-xi1*w2)/(w1*w1-w2*w2);
+  alpha2 = 2.*(xi1*w1-xi2*w2)/(w1*w1-w2*w2);
 }

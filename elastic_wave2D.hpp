@@ -70,6 +70,9 @@ protected:
 
 
 
+/**
+ * Implementation of a vector point force as a component of a source term.
+ */
 class VectorPointForce: public mfem::VectorCoefficient
 {
 public:
@@ -85,6 +88,9 @@ private:
 
 
 
+/**
+ * Implementation of a moment tensor density as a component of a source term.
+ */
 class MomentTensorSource: public mfem::VectorCoefficient
 {
 public:
@@ -112,7 +118,7 @@ public:
 private:
   const Parameters& param;
 
-  mfem::Mesh *mesh;
+  /*mfem::Mesh *mesh;
   mfem::FiniteElementCollection *fec;
   mfem::FiniteElementSpace *fespace;
   mfem::BilinearForm *stif;
@@ -134,7 +140,7 @@ private:
   mfem::VectorDomainLFIntegrator *point_force_int;
   mfem::VectorDomainLFIntegrator *moment_tensor_int;
 
-  mfem::LinearForm *b;
+  mfem::LinearForm *b;*/
 
   /**
    * Finite Element Method (FEM) (non-diagonal mass matrix) with Absorbing
@@ -148,15 +154,14 @@ private:
    * Reduction Method (SRM) for implementation of absorbing boundary condition.
    */
   void run_SEM_SRM();
-
-//  void offline_stage();
-//  void online_stage();
 };
 
-double mass_damp_weight(const mfem::Vector& point, const Parameters& param);
-double stif_damp_weight(const mfem::Vector& point, const Parameters& param);
+
+
 mfem::Vector compute_solution_at_points(const std::vector<mfem::Vertex>& points,
                                         const std::vector<int>& cells_containing_points,
                                         const mfem::GridFunction& U);
+
+void show_SRM_damp_weights(const Parameters& param);
 
 #endif // ELWAVE2D_HPP

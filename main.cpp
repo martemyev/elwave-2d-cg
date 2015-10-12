@@ -33,7 +33,7 @@ int main(int argc, char *argv[])
     Parameters param;
     param.init(argc, argv);
 
-//    show_damp_weights(param);
+//    show_SRM_damp_weights(param);
 
     ElasticWave2D elwave(param);
     elwave.run();
@@ -118,38 +118,5 @@ void test_polynomials()
   delete[] nodes;
 }
 */
-
-
-void show_damp_weights(const Parameters& param)
-{
-  Vector mass_damp((param.nx+1)*(param.ny+1));
-  Vector stif_damp((param.nx+1)*(param.ny+1));
-
-  const double hx = param.sx / param.nx;
-  const double hy = param.sy / param.ny;
-
-  for (int iy = 0; iy < param.ny+1; ++iy)
-  {
-    const double y = (iy == param.ny ? param.sy : iy*hy);
-    for (int ix = 0; ix < param.nx+1; ++ix)
-    {
-      const double x = (ix == param.nx ? param.sx : ix*hx);
-      Vector point(2); point(0) = x; point(1) = y;
-      const double md = mass_damp_weight(point, param);
-      const double sd = stif_damp_weight(point, param);
-      mass_damp(iy*(param.nx+1)+ix) = md;
-      stif_damp(iy*(param.nx+1)+ix) = sd;
-    }
-  }
-
-  string fname = "mass_damping_weights.vts";
-  write_vts_scalar(fname, "mass_weights", param.sx, param.sy, param.nx,
-                   param.ny, mass_damp);
-
-  fname = "stif_damping_weights.vts";
-  write_vts_scalar(fname, "stif_weights", param.sx, param.sy, param.nx,
-                   param.ny, stif_damp);
-}
-
 
 

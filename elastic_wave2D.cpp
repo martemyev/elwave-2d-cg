@@ -53,7 +53,7 @@ void MomentTensorSource::Eval(Vector &V, ElementTransformation &T,
 //------------------------------------------------------------------------------
 ElasticWave2D::ElasticWave2D(const Parameters &_param)
   : param(_param)
-  , mesh(nullptr)
+/*  , mesh(nullptr)
   , fec(nullptr)
   , fespace(nullptr)
   , stif(nullptr)
@@ -72,12 +72,12 @@ ElasticWave2D::ElasticWave2D(const Parameters &_param)
   , momemt_tensor_source(nullptr)
   , point_force_int(nullptr)
   , moment_tensor_int(nullptr)
-  , b(nullptr)
+  , b(nullptr)*/
 { }
 
 ElasticWave2D::~ElasticWave2D()
 {
-  delete b;
+  /*delete b;
 
   delete mu_damp_coef;
   delete lambda_damp_coef;
@@ -95,7 +95,7 @@ ElasticWave2D::~ElasticWave2D()
   delete stif;
   delete fespace;
   delete fec;
-  delete mesh;
+  delete mesh;*/
 }
 
 void ElasticWave2D::run()
@@ -107,154 +107,7 @@ void ElasticWave2D::run()
   else MFEM_ABORT("Unknown method to be used");
 }
 
-double mass_damp_weight(const Vector& point, const Parameters& param)
-{
-  const double x = point(0);
-  const double y = point(1);
-  bool left = true, right = true, bottom = true;
-  bool top = (param.topsurf == 0 ? true : false);
 
-  const double X0 = 0;
-  const double X1 = param.sx;
-  const double Y0 = 0;
-  const double Y1 = param.sy;
-  const double layer = param.damp_layer;
-  const double power = param.damp_power;
-
-  // coef for the mass matrix in a damping region is computed
-  // C_M = C_Mmax * x^p, where
-  // p is typically 3,
-  // x changes from 0 at the interface between damping and non-damping regions
-  // to 1 at the boundary - the farthest damping layer
-  // C_M in the non-damping region is 0
-
-  double weight = 1e-12;
-  if (left && x - layer <= X0)
-    weight += pow((X0-x+layer)/layer, power);
-  else if (right && x + layer >= X1)
-    weight += pow((x+layer-X1)/layer, power);
-
-  if (bottom && y - layer <= Y0)
-    weight += pow((Y0-y+layer)/layer, power);
-  else if (top && y + layer >= Y1)
-    weight += pow((y+layer-Y1)/layer, power);
-
-  return weight;
-}
-
-double stif_damp_weight(const Vector& point, const Parameters& param)
-{
-  const double x = point(0);
-  const double y = point(1);
-  bool left = true, right = true, bottom = true;
-  bool top = (param.topsurf == 0 ? true : false);
-
-  const double X0 = 0;
-  const double X1 = param.sx;
-  const double Y0 = 0;
-  const double Y1 = param.sy;
-  const double layer = param.damp_layer;
-  const double power = param.damp_power; //+1;
-  const double C0 = log(100.0);
-
-  // coef for the stif matrix in a damping region is computed
-  // C_K = exp(-C0*alpha(x)*k_inc*x), where
-  // C0 = ln(100)
-  // alpha(x) = a_Max * x^p
-  // p is typically 3,
-  // x changes from 0 to 1 (1 at the boundary - the farthest damping layer)
-  // C_K in the non-damping region is 1
-
-  double weight = 1.0;
-  if (left && x - layer <= X0)
-    weight *= exp(-C0*pow((X0-x+layer)/layer, power));
-  else if (right && x + layer >= X1)
-    weight *= exp(-C0*pow((x+layer-X1)/layer, power));
-
-  if (bottom && y - layer <= Y0)
-    weight *= exp(-C0*pow((Y0-y+layer)/layer, power));
-  else if (top && y + layer >= Y1)
-    weight *= exp(-C0*pow((y+layer-Y1)/layer, power));
-
-  return weight;
-}
-
-//void compute_mass_damping_weights(int nx, int ny, double X0, double X1,
-//                                  double Y0, double Y1, double damping_layer,
-//                                  bool left, bool right, bool bottom, bool top,
-//                                  double *damping_weights)
-//{
-//  const double p = 1.2;
-
-//  const double hx = (X1 - X0) / nx;
-//  const double hy = (Y1 - Y0) / ny;
-
-//  for (int ely = 0; ely < ny; ++ely)
-//  {
-//    const double y = Y0 + (ely+0.5)*hy; // center of a cell
-//    for (int elx = 0; elx < nx; ++elx)
-//    {
-//      const double x = X0 + (elx+0.5)*hx; // center of a cell
-
-//      double weight = 0.0;
-
-//      if (left && x - damping_layer < X0)
-//        weight += pow((X0-(x-damping_layer))/damping_layer, p);
-//      else if (right && x + damping_layer > X1)
-//        weight += pow((x+damping_layer-X1)/damping_layer, p);
-
-//      if (bottom && y - damping_layer < Y0)
-//        weight += pow((Y0-(y-damping_layer))/damping_layer, p);
-//      else if (top && y + damping_layer > Y1)
-//        weight += pow((y+damping_layer-Y1)/damping_layer, p);
-
-//      const int el = ely*nx + elx;
-//      damping_weights[el] = weight;
-//    }
-//  }
-//}
-
-//void compute_stif_damping_weights(int nx, int ny, double X0, double X1,
-//                                  double Y0, double Y1, double damping_layer,
-//                                  bool left, bool right, bool bottom, bool top,
-//                                  double *damping_weights)
-//{
-//  const double p = 0.2;
-
-//  const double hx = (X1 - X0) / nx;
-//  const double hy = (Y1 - Y0) / ny;
-
-//  for (int ely = 0; ely < ny; ++ely)
-//  {
-//    const double y = Y0 + (ely+0.5)*hy; // center of a cell
-//    for (int elx = 0; elx < nx; ++elx)
-//    {
-//      const double x = X0 + (elx+0.5)*hx; // center of a cell
-
-//      double weight = 1.0;
-
-//      if (left && x - damping_layer < X0)
-//        weight *= exp(-log(100) * pow((X0-(x-damping_layer))/damping_layer, p+1));
-//      else if (right && x + damping_layer > X1)
-//        weight *= exp(-log(100) * pow((x+damping_layer-X1)/damping_layer, p+1));
-
-//      if (bottom && y - damping_layer < Y0)
-//        weight *= exp(-log(100) * pow((Y0-(y-damping_layer))/damping_layer, p+1));
-//      else if (top && y + damping_layer > Y1)
-//        weight *= exp(-log(100) * pow((y+damping_layer-Y1)/damping_layer, p+1));
-
-//      const int el = ely*nx + elx;
-//      damping_weights[el] = weight;
-//    }
-//  }
-//}
-
-void get_damp_alpha(double source_frequency, double &alpha)
-{
-  // This is obtained by Shubin Fu, PhD student, Texas A&M
-  const double q = 0.4;
-  alpha = 2.0 * M_PI * source_frequency * q;
-}
 /*
 void ElasticWave2D::offline_stage()
 {

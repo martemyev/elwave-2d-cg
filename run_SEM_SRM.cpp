@@ -8,20 +8,23 @@
 using namespace std;
 using namespace mfem;
 
+double mass_damp_weight(const mfem::Vector& point, const Parameters& param);
+double stif_damp_weight(const mfem::Vector& point, const Parameters& param);
+
 
 
 void ElasticWave2D::run_SEM_SRM()
 {
   bool generate_edges = 1;
-  mesh = new Mesh(param.nx, param.ny, Element::QUADRILATERAL, generate_edges,
-                  param.sx, param.sy);
-  const int dim = mesh->Dimension();
-  MFEM_VERIFY(param.nx*param.ny == mesh->GetNE(), "Unexpected number of mesh "
+  Mesh mesh(param.nx, param.ny, Element::QUADRILATERAL, generate_edges,
+            param.sx, param.sy);
+  const int dim = mesh.Dimension();
+  MFEM_VERIFY(param.nx*param.ny == mesh.GetNE(), "Unexpected number of mesh "
               "elements");
 
-  fec = new H1_FECollection(param.order, dim);
-  fespace = new FiniteElementSpace(mesh, fec, dim, Ordering::byVDIM);
-  cout << "Number of unknowns: " << fespace->GetVSize() << endl;
+  FiniteElementCollection *fec = new H1_FECollection(param.order, dim);
+  FiniteElementSpace fespace(&mesh, fec, dim, Ordering::byVDIM);
+  cout << "Number of unknowns: " << fespace.GetVSize() << endl;
 
   const int n_elements = param.nx*param.ny;
   double *lambda_array = new double[n_elements];
@@ -37,74 +40,61 @@ void ElasticWave2D::run_SEM_SRM()
     mu_array[i]      = rho*vs*vs;
   }
 
-  rho_coef      = new CWConstCoefficient(param.rho_array, 0);
-  lambda_coef   = new CWFunctionCoefficient(stif_damp_weight, param, lambda_array);
-  mu_coef       = new CWFunctionCoefficient(stif_damp_weight, param, mu_array);
-  rho_damp_coef = new CWFunctionCoefficient(mass_damp_weight, param, param.rho_array, 0);
+  CWConstCoefficient rho_coef(param.rho_array, 0);
+  CWFunctionCoefficient lambda_coef  (stif_damp_weight, param, lambda_array);
+  CWFunctionCoefficient mu_coef      (stif_damp_weight, param, mu_array);
+  CWFunctionCoefficient rho_damp_coef(mass_damp_weight, param, param.rho_array, 0);
 
-  elast_int = new ElasticityIntegrator(*lambda_coef, *mu_coef);
-  stif = new BilinearForm(fespace);
-  stif->AddDomainIntegrator(elast_int);
+  IntegrationRule segment_GLL;
+  create_segment_GLL_rule(param.order, segment_GLL);
+  IntegrationRule quad_GLL(segment_GLL, segment_GLL);
 
-  mass_int = new VectorMassIntegrator(*rho_coef);
-  mass = new BilinearForm(fespace);
-  mass->AddDomainIntegrator(mass_int);
+  ElasticityIntegrator *elast_int = new ElasticityIntegrator(lambda_coef, mu_coef);
+  elast_int->SetIntRule(&quad_GLL);
+  BilinearForm stif(&fespace);
+  stif.AddDomainIntegrator(elast_int);
+  stif.Assemble();
+  stif.Finalize();
+  const SparseMatrix& S = stif.SpMat();
 
-  damp_int = new VectorMassIntegrator(*rho_damp_coef);
-  dampM = new BilinearForm(fespace);
-  dampM->AddDomainIntegrator(damp_int);
-
-  vector_point_force = new VectorPointForce(dim, param.source);
-  point_force_int = new VectorDomainLFIntegrator(*vector_point_force);
-
-  momemt_tensor_source = new MomentTensorSource(dim, param.source);
-  moment_tensor_int = new VectorDomainLFIntegrator(*momemt_tensor_source);
-
-  b = new LinearForm(fespace);
-  b->AddDomainIntegrator(point_force_int);
-  b->AddDomainIntegrator(moment_tensor_int);
-
-  IntegrationRule *segment_GLL = nullptr;
-  IntegrationRule *quad_GLL = nullptr;
-
-  segment_GLL = new IntegrationRule;
-  create_segment_GLL_rule(param.order, *segment_GLL);
-  quad_GLL = new IntegrationRule(*segment_GLL, *segment_GLL);
-
-  elast_int->SetIntRule(quad_GLL);
-  mass_int->SetIntRule(quad_GLL);
-  damp_int->SetIntRule(quad_GLL);
-  point_force_int->SetIntRule(quad_GLL);
-  moment_tensor_int->SetIntRule(quad_GLL);
-
-  stif->Assemble();
-  stif->Finalize();
-  const SparseMatrix& S = stif->SpMat();
-
-  mass->Assemble();
-  mass->Finalize();
-  SparseMatrix& M = mass->SpMat();
-
-  dampM->Assemble();
-  dampM->Finalize();
-  SparseMatrix& D = dampM->SpMat();
-  double omega = 2.0*M_PI*param.source.frequency; // angular frequency
-  D *= 0.5*param.dt*omega;
+  VectorMassIntegrator *mass_int = new VectorMassIntegrator(rho_coef);
+  mass_int->SetIntRule(&quad_GLL);
+  BilinearForm mass(&fespace);
+  mass.AddDomainIntegrator(mass_int);
+  mass.Assemble();
+  mass.Finalize();
+  const SparseMatrix& M = mass.SpMat();
 
 //  ofstream mout("mass_mat.dat");
 //  mass->PrintMatlab(mout);
   cout << "M.nnz = " << M.NumNonZeroElems() << endl;
 
-  Vector *diagM = nullptr;
-  Vector *diagD = nullptr;
+  VectorMassIntegrator *damp_int = new VectorMassIntegrator(rho_damp_coef);
+  damp_int->SetIntRule(&quad_GLL);
+  BilinearForm dampM(&fespace);
+  dampM.AddDomainIntegrator(damp_int);
+  dampM.Assemble();
+  dampM.Finalize();
+  SparseMatrix& D = dampM.SpMat();
+  double omega = 2.0*M_PI*param.source.frequency; // angular frequency
+  D *= 0.5*param.dt*omega;
 
-  diagM = new Vector;
-  M.GetDiag(*diagM); // mass matrix is diagonal
-  diagD = new Vector;
-  D.GetDiag(*diagD); // damping matrix is diagonal
+  VectorPointForce vector_point_force(dim, param.source);
+  VectorDomainLFIntegrator *point_force_int = new VectorDomainLFIntegrator(vector_point_force);
+  point_force_int->SetIntRule(&quad_GLL);
 
-  b->Assemble();
-  cout << "||b||_L2 = " << b->Norml2() << endl;
+  MomentTensorSource momemt_tensor_source(dim, param.source);
+  VectorDomainLFIntegrator *moment_tensor_int = new VectorDomainLFIntegrator(momemt_tensor_source);
+  moment_tensor_int->SetIntRule(&quad_GLL);
+
+  LinearForm b(&fespace);
+  b.AddDomainIntegrator(point_force_int);
+  b.AddDomainIntegrator(moment_tensor_int);
+  b.Assemble();
+  cout << "||b||_L2 = " << b.Norml2() << endl;
+
+  Vector diagM; M.GetDiag(diagM); // mass matrix is diagonal
+  Vector diagD; D.GetDiag(diagD); // damping matrix is diagonal
 
   const string method_name = "SEM_";
 
@@ -128,17 +118,13 @@ void ElasticWave2D::run_SEM_SRM()
     } // loop for components
   } // loop for sets of receivers
 
-  GridFunction u_0(fespace); // displacement
-  GridFunction u_1(fespace);
-  GridFunction u_2(fespace);
-  GridFunction v_1(fespace); // velocity
+  GridFunction u_0(&fespace); // displacement
+  GridFunction u_1(&fespace);
+  GridFunction u_2(&fespace);
+  GridFunction v_1(&fespace); // velocity
   u_0 = 0.0;
   u_1 = 0.0;
   u_2 = 0.0;
-
-  Vector tmp;
-  u_0.GetNodalValues(tmp, 1);
-  cout << "nodal values size = " << tmp.Size() << endl;
 
   const int n_time_steps = ceil(param.T / param.dt);
   const int tenth = 0.1 * n_time_steps;
@@ -158,20 +144,20 @@ void ElasticWave2D::run_SEM_SRM()
     Vector y = u_1; y *= 2.0; y -= u_2;        // y = 2*u_1 - u_2
 
     Vector z0; z0.SetSize(N);                  // z0 = M * (2*u_1 - u_2)
-    for (int i = 0; i < N; ++i) z0[i] = (*diagM)[i] * y[i];
+    for (int i = 0; i < N; ++i) z0[i] = diagM[i] * y[i];
 
     Vector z1; z1.SetSize(N); S.Mult(u_1, z1); // z1 = S * u_1
 
-    Vector z2 = *b; z2 *= r;                   // z2 = r * b
+    Vector z2 = b; z2 *= r;                    // z2 = r * b
 
     y = z1; y -= z2; y *= param.dt*param.dt;   // y = dt^2 * (S*u_1 - r*b)
 
     Vector RHS = z0; RHS -= y;                 // RHS = M*(2*u_1-u_2) - dt^2*(S*u_1-r*b)
 
-    for (int i = 0; i < N; ++i) y[i] = (*diagD)[i] * u_2[i]; // y = D * u_2
+    for (int i = 0; i < N; ++i) y[i] = diagD[i] * u_2[i]; // y = D * u_2
     RHS += y;                                                // RHS = M*(2*u_1-u_2) - dt^2*(S*u_1-r*b) + D*u_2
     // (M+D)*x_0 = M*(2*x_1-x_2) - dt^2*(S*x_1-r*b) + D*x_2
-    for (int i = 0; i < N; ++i) u_0[i] = RHS[i] / ((*diagM)[i]+(*diagD)[i]);
+    for (int i = 0; i < N; ++i) u_0[i] = RHS[i] / (diagM[i]+diagD[i]);
 
     // velocity
     v_1  = u_0;
@@ -246,10 +232,115 @@ void ElasticWave2D::run_SEM_SRM()
 
   cout << "Time loop is over" << endl;
 
-  delete diagD;
-  delete diagM;
+  delete fec;
+}
 
-  delete quad_GLL;
-  delete segment_GLL;
+
+
+double mass_damp_weight(const Vector& point, const Parameters& param)
+{
+  const double x = point(0);
+  const double y = point(1);
+  bool left = true, right = true, bottom = true;
+  bool top = (param.topsurf == 0 ? true : false);
+
+  const double X0 = 0;
+  const double X1 = param.sx;
+  const double Y0 = 0;
+  const double Y1 = param.sy;
+  const double layer = param.damp_layer;
+  const double power = param.damp_power;
+
+  // coef for the mass matrix in a damping region is computed
+  // C_M = C_Mmax * x^p, where
+  // p is typically 3,
+  // x changes from 0 at the interface between damping and non-damping regions
+  // to 1 at the boundary - the farthest damping layer
+  // C_M in the non-damping region is 0
+
+  double weight = 0.0;
+  if (left && x - layer <= X0)
+    weight += pow((X0-x+layer)/layer, power);
+  else if (right && x + layer >= X1)
+    weight += pow((x+layer-X1)/layer, power);
+
+  if (bottom && y - layer <= Y0)
+    weight += pow((Y0-y+layer)/layer, power);
+  else if (top && y + layer >= Y1)
+    weight += pow((y+layer-Y1)/layer, power);
+
+  return weight;
+}
+
+
+
+double stif_damp_weight(const Vector& point, const Parameters& param)
+{
+  const double x = point(0);
+  const double y = point(1);
+  bool left = true, right = true, bottom = true;
+  bool top = (param.topsurf == 0 ? true : false);
+
+  const double X0 = 0;
+  const double X1 = param.sx;
+  const double Y0 = 0;
+  const double Y1 = param.sy;
+  const double layer = param.damp_layer;
+  const double power = param.damp_power; //+1;
+  const double C0 = log(100.0);
+
+  // coef for the stif matrix in a damping region is computed
+  // C_K = exp(-C0*alpha(x)*k_inc*x), where
+  // C0 = ln(100)
+  // alpha(x) = a_Max * x^p
+  // p is typically 3,
+  // x changes from 0 to 1 (1 at the boundary - the farthest damping layer)
+  // C_K in the non-damping region is 1
+
+  double weight = 1.0;
+  if (left && x - layer <= X0)
+    weight *= exp(-C0*pow((X0-x+layer)/layer, power));
+  else if (right && x + layer >= X1)
+    weight *= exp(-C0*pow((x+layer-X1)/layer, power));
+
+  if (bottom && y - layer <= Y0)
+    weight *= exp(-C0*pow((Y0-y+layer)/layer, power));
+  else if (top && y + layer >= Y1)
+    weight *= exp(-C0*pow((y+layer-Y1)/layer, power));
+
+  return weight;
+}
+
+
+
+void show_SRM_damp_weights(const Parameters& param)
+{
+  Vector mass_damp((param.nx+1)*(param.ny+1));
+  Vector stif_damp((param.nx+1)*(param.ny+1));
+
+  const double hx = param.sx / param.nx;
+  const double hy = param.sy / param.ny;
+
+  for (int iy = 0; iy < param.ny+1; ++iy)
+  {
+    const double y = (iy == param.ny ? param.sy : iy*hy);
+    for (int ix = 0; ix < param.nx+1; ++ix)
+    {
+      const double x = (ix == param.nx ? param.sx : ix*hx);
+      Vector point(2); point(0) = x; point(1) = y;
+      const double md = mass_damp_weight(point, param);
+      const double sd = stif_damp_weight(point, param);
+      mass_damp(iy*(param.nx+1)+ix) = md;
+      stif_damp(iy*(param.nx+1)+ix) = sd;
+    }
+  }
+
+  string fname = "mass_damping_weights.vts";
+  write_vts_scalar(fname, "mass_weights", param.sx, param.sy, param.nx,
+                   param.ny, mass_damp);
+
+  fname = "stif_damping_weights.vts";
+  write_vts_scalar(fname, "stif_weights", param.sx, param.sy, param.nx,
+                   param.ny, stif_damp);
 }
 

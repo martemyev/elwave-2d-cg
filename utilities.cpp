@@ -85,9 +85,9 @@ void get_minmax(double *a, int n_elements, double &min_val, double &max_val)
 
 
 
-void write_vts(const std::string& filename, const std::string& solname,
-               double sx, double sy, int nx, int ny,
-               const Vector& sol_x, const Vector& sol_y)
+void write_vts_vector(const std::string& filename, const std::string& solname,
+                      double sx, double sy, int nx, int ny,
+                      const Vector& sol_x, const Vector& sol_y)
 {
   ofstream out(filename.c_str());
   MFEM_VERIFY(out, "File '" + filename + "' can't be opened");
@@ -107,6 +107,62 @@ void write_vts(const std::string& filename, const std::string& solname,
       const int glob_vert_index = i*(nx+1) + j;
       out << sol_x(glob_vert_index) << " "
           << sol_y(glob_vert_index) << " 0.0 ";
+    }
+  }
+
+  out << "\n";
+  out << "        </DataArray>\n";
+  out << "      </PointData>\n";
+  out << "      <Points>\n";
+  out << "        <DataArray type=\"Float64\" NumberOfComponents=\"3\" "
+         "format=\"ascii\">\n";
+
+  const double hx = sx / nx;
+  const double hy = sy / ny;
+
+  for (int i = 0; i < ny+1; ++i)
+  {
+    const double y = (i == ny ? sy : i*hy);
+    for (int j = 0; j < nx+1; ++j)
+    {
+      const double x = (j == nx ? sx : j*hx);
+      out << x << " " << y << " 0.0 ";
+    }
+  }
+
+  out << "\n";
+  out << "        </DataArray>\n";
+  out << "      </Points>\n";
+  out << "    </Piece>\n";
+  out << "  </StructuredGrid>\n";
+  out << "</VTKFile>\n";
+
+  out.close();
+}
+
+
+
+void write_vts_scalar(const std::string& filename, const std::string& solname,
+                      double sx, double sy, int nx, int ny,
+                      const Vector& sol)
+{
+  ofstream out(filename.c_str());
+  MFEM_VERIFY(out, "File '" + filename + "' can't be opened");
+
+  out << "<?xml version=\"1.0\"?>\n";
+  out << "<VTKFile type=\"StructuredGrid\" version=\"0.1\">\n";
+  out << "  <StructuredGrid WholeExtent=\"1 " << nx+1 << " 1 1 1 " << ny+1 << "\">\n";
+  out << "    <Piece Extent=\"1 " << nx+1 << " 1 1 1 " << ny+1 << "\">\n";
+  out << "      <PointData Scalars=\"" << solname << "\">\n";
+  out << "        <DataArray type=\"Float64\" Name=\"" << solname
+      << "\" format=\"ascii\" NumberOfComponents=\"1\">\n";
+
+  for (int i = 0; i < ny+1; ++i)
+  {
+    for (int j = 0; j < nx+1; ++j)
+    {
+      const int glob_vert_index = i*(nx+1) + j;
+      out << sol(glob_vert_index) << " ";
     }
   }
 

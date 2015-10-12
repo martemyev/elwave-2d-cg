@@ -140,6 +140,7 @@ Parameters::Parameters()
   , vp_array(nullptr)
   , vs_array(nullptr)
   , damp_layer(100.0)
+  , damp_power(3.0)
   , topsurf(1)
   , source()
   , step_snap(1000)
@@ -176,7 +177,8 @@ void Parameters::init(int argc, char **argv)
   args.AddOption(&vpfile, "-vpfile", "--vpfile", "P-wave velocity file, in m/s");
   args.AddOption(&vsfile, "-vsfile", "--vsfile", "S-wave velocity file, in m/s");
 
-  args.AddOption(&damp_layer, "-damp", "--damp-layer", "Thickness of damping layer, m");
+  args.AddOption(&damp_layer, "-dlayer", "--damp-layer", "Thickness of damping layer, m");
+  args.AddOption(&damp_power, "-dpower", "--damp-power", "Power in damping coefficient functions");
   args.AddOption(&topsurf, "-top", "--top-surface", "Top surface: 0 absorbing, 1 free");
 
   source.AddOptions(args);

@@ -75,7 +75,7 @@ void write_binary(const char *filename, int n_values, double *values);
 void get_minmax(double *a, int n_elements, double &min_val, double &max_val);
 
 /**
- * Write a snapshot of a wavefield in a VTS format
+ * Write a snapshot of a vector wavefield in a VTS format
  * @param filename - output file name
  * @param solname - name of the wavefield
  * @param sx - size of domain in x-direction
@@ -85,8 +85,22 @@ void get_minmax(double *a, int n_elements, double &min_val, double &max_val);
  * @param sol_x - x-component of the vector wavefield
  * @param sol_y - y-component of the vector wavefield
  */
-void write_vts(const std::string& filename, const std::string& solname,
-               double sx, double sy, int nx, int ny,
-               const mfem::Vector& sol_x, const mfem::Vector& sol_y);
+void write_vts_vector(const std::string& filename, const std::string& solname,
+                      double sx, double sy, int nx, int ny,
+                      const mfem::Vector& sol_x, const mfem::Vector& sol_y);
+
+/**
+ * Write scalar values in a VTS format
+ * @param filename - output file name
+ * @param solname - name of the wavefield
+ * @param sx - size of domain in x-direction
+ * @param sy - size of domain in y-direction
+ * @param nx - number of cells in x-direction
+ * @param ny - number of cells in y-direction
+ * @param sol - scalar values
+ */
+void write_vts_scalar(const std::string& filename, const std::string& solname,
+                      double sx, double sy, int nx, int ny,
+                      const mfem::Vector& sol);
 
 #endif // UTILITIES_HPP

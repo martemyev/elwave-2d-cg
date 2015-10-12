@@ -9,7 +9,7 @@
 using namespace std;
 using namespace mfem;
 
-#define RECEIVER_Y 700
+
 
 //------------------------------------------------------------------------------
 //------------------------------------------------------------------------------
@@ -58,11 +58,14 @@ ElasticWave2D::ElasticWave2D(const Parameters &_param)
   , fespace(nullptr)
   , stif(nullptr)
   , mass(nullptr)
-  , damp(nullptr)
+  , dampM(nullptr)
+  , dampS(nullptr)
   , rho_coef(nullptr)
   , lambda_coef(nullptr)
   , mu_coef(nullptr)
-  , rho_w_coef(nullptr)
+  , rho_damp_coef(nullptr)
+  , lambda_damp_coef(nullptr)
+  , mu_damp_coef(nullptr)
   , elast_int(nullptr)
   , mass_int(nullptr)
   , vector_point_force(nullptr)
@@ -76,7 +79,9 @@ ElasticWave2D::~ElasticWave2D()
 {
   delete b;
 
-  delete rho_w_coef;
+  delete mu_damp_coef;
+  delete lambda_damp_coef;
+  delete rho_damp_coef;
   delete mu_coef;
   delete lambda_coef;
   delete rho_coef;
@@ -84,7 +89,8 @@ ElasticWave2D::~ElasticWave2D()
   delete momemt_tensor_source;
   delete vector_point_force;
 
-  delete damp;
+  delete dampS;
+  delete dampM;
   delete mass;
   delete stif;
   delete fespace;
@@ -94,99 +100,154 @@ ElasticWave2D::~ElasticWave2D()
 
 void ElasticWave2D::run()
 {
-  offline_stage();
-
-  IntegrationRule *segment_GLL = nullptr;
-  IntegrationRule *quad_GLL = nullptr;
-
-  if (param.method == 1) // SEM
-  {
-    segment_GLL = new IntegrationRule;
-    create_segment_GLL_rule(param.order, *segment_GLL);
-    quad_GLL = new IntegrationRule(*segment_GLL, *segment_GLL);
-
-    elast_int->SetIntRule(quad_GLL);
-    mass_int->SetIntRule(quad_GLL);
-    damp_int->SetIntRule(quad_GLL);
-    point_force_int->SetIntRule(quad_GLL);
-    moment_tensor_int->SetIntRule(quad_GLL);
-  }
-
-  online_stage();
-
-  delete quad_GLL;
-  delete segment_GLL;
+  if (param.method == 0) // FEM
+    run_FEM_ALID();
+  else if (param.method == 1) // SEM
+    run_SEM_SRM();
+  else MFEM_ABORT("Unknown method to be used");
 }
 
-void compute_mass_damping_weights(int nx, int ny, double X0, double X1,
-                                  double Y0, double Y1, double damping_layer,
-                                  bool left, bool right, bool bottom, bool top,
-                                  double *damping_weights)
+double mass_damp_weight(const Vector& point, const Parameters& param)
 {
-  const double p = 1.2;
+  const double x = point(0);
+  const double y = point(1);
+  bool left = true, right = true, bottom = true;
+  bool top = (param.topsurf == 0 ? true : false);
 
-  const double hx = (X1 - X0) / nx;
-  const double hy = (Y1 - Y0) / ny;
+  const double X0 = 0;
+  const double X1 = param.sx;
+  const double Y0 = 0;
+  const double Y1 = param.sy;
+  const double layer = param.damp_layer;
+  const double power = param.damp_power;
 
-  for (int ely = 0; ely < ny; ++ely)
-  {
-    const double y = Y0 + (ely+0.5)*hy; // center of a cell
-    for (int elx = 0; elx < nx; ++elx)
-    {
-      const double x = X0 + (elx+0.5)*hx; // center of a cell
+  // coef for the mass matrix in a damping region is computed
+  // C_M = C_Mmax * x^p, where
+  // p is typically 3,
+  // x changes from 0 at the interface between damping and non-damping regions
+  // to 1 at the boundary - the farthest damping layer
+  // C_M in the non-damping region is 0
 
-      double weight = 0.0;
+  double weight = 1e-12;
+  if (left && x - layer <= X0)
+    weight += pow((X0-x+layer)/layer, power);
+  else if (right && x + layer >= X1)
+    weight += pow((x+layer-X1)/layer, power);
 
-      if (left && x - damping_layer < X0)
-        weight += pow((X0-(x-damping_layer))/damping_layer, p);
-      else if (right && x + damping_layer > X1)
-        weight += pow((x+damping_layer-X1)/damping_layer, p);
+  if (bottom && y - layer <= Y0)
+    weight += pow((Y0-y+layer)/layer, power);
+  else if (top && y + layer >= Y1)
+    weight += pow((y+layer-Y1)/layer, power);
 
-      if (bottom && y - damping_layer < Y0)
-        weight += pow((Y0-(y-damping_layer))/damping_layer, p);
-      else if (top && y + damping_layer > Y1)
-        weight += pow((y+damping_layer-Y1)/damping_layer, p);
-
-      const int el = ely*nx + elx;
-      damping_weights[el] = weight;
-    }
-  }
+  return weight;
 }
 
-void compute_stif_damping_weights(int nx, int ny, double X0, double X1,
-                                  double Y0, double Y1, double damping_layer,
-                                  bool left, bool right, bool bottom, bool top,
-                                  double *damping_weights)
+double stif_damp_weight(const Vector& point, const Parameters& param)
 {
-  const double p = 0.2;
+  const double x = point(0);
+  const double y = point(1);
+  bool left = true, right = true, bottom = true;
+  bool top = (param.topsurf == 0 ? true : false);
 
-  const double hx = (X1 - X0) / nx;
-  const double hy = (Y1 - Y0) / ny;
+  const double X0 = 0;
+  const double X1 = param.sx;
+  const double Y0 = 0;
+  const double Y1 = param.sy;
+  const double layer = param.damp_layer;
+  const double power = param.damp_power; //+1;
+  const double C0 = log(100.0);
 
-  for (int ely = 0; ely < ny; ++ely)
-  {
-    const double y = Y0 + (ely+0.5)*hy; // center of a cell
-    for (int elx = 0; elx < nx; ++elx)
-    {
-      const double x = X0 + (elx+0.5)*hx; // center of a cell
+  // coef for the stif matrix in a damping region is computed
+  // C_K = exp(-C0*alpha(x)*k_inc*x), where
+  // C0 = ln(100)
+  // alpha(x) = a_Max * x^p
+  // p is typically 3,
+  // x changes from 0 to 1 (1 at the boundary - the farthest damping layer)
+  // C_K in the non-damping region is 1
 
-      double weight = 1.0;
+  double weight = 1.0;
+  if (left && x - layer <= X0)
+    weight *= exp(-C0*pow((X0-x+layer)/layer, power));
+  else if (right && x + layer >= X1)
+    weight *= exp(-C0*pow((x+layer-X1)/layer, power));
 
-      if (left && x - damping_layer < X0)
-        weight *= exp(-log(100) * pow((X0-(x-damping_layer))/damping_layer, p+1));
-      else if (right && x + damping_layer > X1)
-        weight *= exp(-log(100) * pow((x+damping_layer-X1)/damping_layer, p+1));
+  if (bottom && y - layer <= Y0)
+    weight *= exp(-C0*pow((Y0-y+layer)/layer, power));
+  else if (top && y + layer >= Y1)
+    weight *= exp(-C0*pow((y+layer-Y1)/layer, power));
 
-      if (bottom && y - damping_layer < Y0)
-        weight *= exp(-log(100) * pow((Y0-(y-damping_layer))/damping_layer, p+1));
-      else if (top && y + damping_layer > Y1)
-        weight *= exp(-log(100) * pow((y+damping_layer-Y1)/damping_layer, p+1));
-
-      const int el = ely*nx + elx;
-      damping_weights[el] = weight;
-    }
-  }
+  return weight;
 }
+
+//void compute_mass_damping_weights(int nx, int ny, double X0, double X1,
+//                                  double Y0, double Y1, double damping_layer,
+//                                  bool left, bool right, bool bottom, bool top,
+//                                  double *damping_weights)
+//{
+//  const double p = 1.2;
+
+//  const double hx = (X1 - X0) / nx;
+//  const double hy = (Y1 - Y0) / ny;
+
+//  for (int ely = 0; ely < ny; ++ely)
+//  {
+//    const double y = Y0 + (ely+0.5)*hy; // center of a cell
+//    for (int elx = 0; elx < nx; ++elx)
+//    {
+//      const double x = X0 + (elx+0.5)*hx; // center of a cell
+
+//      double weight = 0.0;
+
+//      if (left && x - damping_layer < X0)
+//        weight += pow((X0-(x-damping_layer))/damping_layer, p);
+//      else if (right && x + damping_layer > X1)
+//        weight += pow((x+damping_layer-X1)/damping_layer, p);
+
+//      if (bottom && y - damping_layer < Y0)
+//        weight += pow((Y0-(y-damping_layer))/damping_layer, p);
+//      else if (top && y + damping_layer > Y1)
+//        weight += pow((y+damping_layer-Y1)/damping_layer, p);
+
+//      const int el = ely*nx + elx;
+//      damping_weights[el] = weight;
+//    }
+//  }
+//}
+
+//void compute_stif_damping_weights(int nx, int ny, double X0, double X1,
+//                                  double Y0, double Y1, double damping_layer,
+//                                  bool left, bool right, bool bottom, bool top,
+//                                  double *damping_weights)
+//{
+//  const double p = 0.2;
+
+//  const double hx = (X1 - X0) / nx;
+//  const double hy = (Y1 - Y0) / ny;
+
+//  for (int ely = 0; ely < ny; ++ely)
+//  {
+//    const double y = Y0 + (ely+0.5)*hy; // center of a cell
+//    for (int elx = 0; elx < nx; ++elx)
+//    {
+//      const double x = X0 + (elx+0.5)*hx; // center of a cell
+
+//      double weight = 1.0;
+
+//      if (left && x - damping_layer < X0)
+//        weight *= exp(-log(100) * pow((X0-(x-damping_layer))/damping_layer, p+1));
+//      else if (right && x + damping_layer > X1)
+//        weight *= exp(-log(100) * pow((x+damping_layer-X1)/damping_layer, p+1));
+
+//      if (bottom && y - damping_layer < Y0)
+//        weight *= exp(-log(100) * pow((Y0-(y-damping_layer))/damping_layer, p+1));
+//      else if (top && y + damping_layer > Y1)
+//        weight *= exp(-log(100) * pow((y+damping_layer-Y1)/damping_layer, p+1));
+
+//      const int el = ely*nx + elx;
+//      damping_weights[el] = weight;
+//    }
+//  }
+//}
 
 void get_damp_alpha(double source_frequency, double &alpha)
 {
@@ -194,7 +255,7 @@ void get_damp_alpha(double source_frequency, double &alpha)
   const double q = 0.4;
   alpha = 2.0 * M_PI * source_frequency * q;
 }
-
+/*
 void ElasticWave2D::offline_stage()
 {
   bool generate_edges = 1;
@@ -211,16 +272,16 @@ void ElasticWave2D::offline_stage()
   const int n_elements = param.nx*param.ny;
   double *lambda_array = new double[n_elements];
   double *mu_array     = new double[n_elements];
-  double *mass_damp_weights = new double[n_elements];
-  bool top_abs = (param.topsurf == 1 ? false : true);
-  compute_mass_damping_weights(param.nx, param.ny, 0, param.sx, 0, param.sy,
-                               param.damp_layer, 1, 1, 1, top_abs,
-                               mass_damp_weights);
-  double *stif_damp_weights = new double[n_elements];
-  compute_stif_damping_weights(param.nx, param.ny, 0, param.sx, 0, param.sy,
-                               param.damp_layer, 1, 1, 1, top_abs,
-                               stif_damp_weights);
-  double *rho_w_array = new double[n_elements];
+//  double *mass_damp_weights = new double[n_elements];
+//  bool top_abs = (param.topsurf == 1 ? false : true);
+//  compute_mass_damping_weights(param.nx, param.ny, 0, param.sx, 0, param.sy,
+//                               param.damp_layer, 1, 1, 1, top_abs,
+//                               mass_damp_weights);
+//  double *stif_damp_weights = new double[n_elements];
+//  compute_stif_damping_weights(param.nx, param.ny, 0, param.sx, 0, param.sy,
+//                               param.damp_layer, 1, 1, 1, top_abs,
+//                               stif_damp_weights);
+//  double *rho_w_array = new double[n_elements];
   for (int i = 0; i < n_elements; ++i)
   {
     const double rho = param.rho_array[i];
@@ -230,22 +291,21 @@ void ElasticWave2D::offline_stage()
     lambda_array[i]  = rho*(vp*vp - 2.*vs*vs);
     mu_array[i]      = rho*vs*vs;
 
-    rho_w_array[i]   = rho*mass_damp_weights[i];
-
-    lambda_array[i] *= stif_damp_weights[i];
-    mu_array[i]     *= stif_damp_weights[i];
+//    rho_w_array[i]   = rho*mass_damp_weights[i];
+//    lambda_array[i] *= stif_damp_weights[i];
+//    mu_array[i]     *= stif_damp_weights[i];
   }
 
-  write_binary("stif_damp_weights.bin", n_elements, stif_damp_weights);
-  write_binary("mass_damp_weights.bin", n_elements, mass_damp_weights);
+//  write_binary("stif_damp_weights.bin", n_elements, stif_damp_weights);
+//  write_binary("mass_damp_weights.bin", n_elements, mass_damp_weights);
 
-  delete[] stif_damp_weights;
-  delete[] mass_damp_weights;
+//  delete[] stif_damp_weights;
+//  delete[] mass_damp_weights;
 
-  rho_coef = new CWConstCoefficient(param.rho_array, 0);
-  lambda_coef = new CWConstCoefficient(lambda_array);
-  mu_coef = new CWConstCoefficient(mu_array);
-  rho_w_coef = new CWConstCoefficient(rho_w_array);
+  rho_coef    = new CWConstCoefficient(param.rho_array, 0);
+  lambda_coef = new CWFunctionCoefficient(stif_damp_weight, param, lambda_array);
+  mu_coef     = new CWFunctionCoefficient(stif_damp_weight, param, mu_array);
+  damp_coef   = new CWFunctionCoefficient(mass_damp_weight, param, param.rho_array, 0);
 
   elast_int = new ElasticityIntegrator(*lambda_coef, *mu_coef);
   stif = new BilinearForm(fespace);
@@ -255,7 +315,7 @@ void ElasticWave2D::offline_stage()
   mass = new BilinearForm(fespace);
   mass->AddDomainIntegrator(mass_int);
 
-  damp_int = new VectorMassIntegrator(*rho_w_coef);
+  damp_int = new VectorMassIntegrator(*damp_coef);
   damp = new BilinearForm(fespace);
   damp->AddDomainIntegrator(damp_int);
 
@@ -269,7 +329,7 @@ void ElasticWave2D::offline_stage()
   b->AddDomainIntegrator(point_force_int);
   b->AddDomainIntegrator(moment_tensor_int);
 }
-
+*/
 Vector compute_solution_at_points(const vector<Vertex>& points,
                                   const vector<int>& cells_containing_points,
                                   const GridFunction& U)
@@ -290,7 +350,7 @@ Vector compute_solution_at_points(const vector<Vertex>& points,
   }
   return U_at_points;
 }
-
+/*
 void ElasticWave2D::online_stage()
 {
   stif->Assemble();
@@ -304,9 +364,9 @@ void ElasticWave2D::online_stage()
   damp->Assemble();
   damp->Finalize();
   SparseMatrix& D = damp->SpMat();
-  double alpha;
-  get_damp_alpha(param.source.frequency, alpha);
-  D *= alpha;
+//  double alpha;
+//  get_damp_alpha(param.source.frequency, alpha);
+//  D *= alpha;
   D *= 0.5*param.dt;
 
 //  ofstream mout("mass_mat.dat");
@@ -444,9 +504,9 @@ void ElasticWave2D::online_stage()
 
       string tstep = d2s(time_step,0,0,0,6);
       string fname = snapshot_filebase + "_U_t" + tstep + ".vts";
-      write_vts(fname, "U", param.sx, param.sy, param.nx, param.ny, u_x, u_y);
+      write_vts_vector(fname, "U", param.sx, param.sy, param.nx, param.ny, u_x, u_y);
       fname = snapshot_filebase + "_V_t" + tstep + ".vts";
-      write_vts(fname, "V", param.sx, param.sy, param.nx, param.ny, v_x, v_y);
+      write_vts_vector(fname, "V", param.sx, param.sy, param.nx, param.ny, v_x, v_y);
       fname = snapshot_filebase + "_Ux_t" + tstep + ".bin";
       write_binary(fname.c_str(), u_x.Size(), u_x);
       fname = snapshot_filebase + "_Uy_t" + tstep + ".bin";
@@ -502,7 +562,7 @@ void ElasticWave2D::online_stage()
   delete prec;
   delete Sys;
 }
-
+*/
 
 
 

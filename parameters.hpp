@@ -65,6 +65,7 @@ public:
   double *rho_array, *vp_array, *vs_array;
 
   double damp_layer; // thickness of a damping layer
+  double damp_power; // power in damping coefficient functions
   int topsurf; // top surface: 0 absorbing, 1 free
 
   Source source; // source of the wave

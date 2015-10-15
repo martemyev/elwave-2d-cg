@@ -203,6 +203,40 @@ Vector compute_solution_at_points(const vector<Vertex>& points,
   }
   return U_at_points;
 }
+
+void cells_containing_vertices(const Mesh& mesh, int nx, int ny, double sx,
+                               double sy, vector<int>& cells)
+{
+  cells.resize(mesh.GetNV());
+
+  for (int v = 0; v < mesh.GetNV(); ++v)
+  {
+    const double *vert_coord = mesh.GetVertex(v);
+    const Vertex vert(vert_coord[0], vert_coord[1], vert_coord[2]);
+    cells[v] = find_element(nx, ny, sx, sy, vert, true);
+  }
+}
+
+Vector get_nodal_values(const vector<int>& cells, const Mesh& mesh,
+                        const GridFunction& U, int vdim)
+{
+  const int nv = mesh.GetNV();
+  Vector nodal_values(nv);
+  Vector values(2);
+  IntegrationPoint ip;
+
+  for (int v = 0; v < nv; ++v)
+  {
+    const double *vert = mesh.GetVertex(v);
+    ip.x = vert[0];
+    ip.y = vert[1];
+    ip.z = vert[2];
+    U.GetVectorValue(cells[v], ip, values);
+    nodal_values(v) = values(vdim-1);
+  }
+
+  return nodal_values;
+}
 /*
 void ElasticWave2D::online_stage()
 {

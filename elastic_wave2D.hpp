@@ -164,4 +164,11 @@ mfem::Vector compute_solution_at_points(const std::vector<mfem::Vertex>& points,
 
 void show_SRM_damp_weights(const Parameters& param);
 
+void cells_containing_vertices(const mfem::Mesh& mesh, int nx, int ny,
+                               double sx, double sy, std::vector<int>& cells);
+
+mfem::Vector get_nodal_values(const std::vector<int>& cells,
+                              const mfem::Mesh& mesh,
+                              const mfem::GridFunction& U, int vdim);
+
 #endif // ELWAVE2D_HPP

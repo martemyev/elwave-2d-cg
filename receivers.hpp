@@ -39,6 +39,9 @@ public:
   const std::vector<int>& get_cells_containing_receivers() const
   { return _cells_containing_receivers; }
 
+  void print_receivers(const mfem::Mesh& mesh,
+                       std::ostream& out = std::cout) const;
+
   /**
    * Initialize the parameters of the receivers set reading them from a given
    * and already open input stream (likely connected to a file).
@@ -94,6 +97,11 @@ protected:
   mfem::Vertex _start; ///< beginning of line of recievers
   mfem::Vertex _end;   ///< end       of line of receivers
 };
+
+
+
+int find_element(int n_cells_x, int n_cells_y, double sx, double sy,
+                 const mfem::Vertex &point, bool throw_exception);
 
 
 #endif // RECEIVERS_HPP

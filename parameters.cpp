@@ -22,17 +22,6 @@ Source::Source()
 
 void Source::AddOptions(OptionsParser& args)
 {
-//  args.AddOption(&source.location(0), "-srcx", "--source-x", "x-coord of a source location");
-//  args.AddOption(&source.location(1), "-srcy", "--source-y", "y-coord of a source location");
-//  args.AddOption(&source.frequency, "-f0", "--frequency", "Central frequency of a source");
-//  args.AddOption(&source.angle, "-angle", "--angle", "Angle of a source force vector in degrees (0 is horizontal)");
-//  args.AddOption(&source.ricker_scale, "-rs", "--ricker-scale", "Factor for the Ricker wavelet");
-//  args.AddOption(&source.point_force_scale, "-pfs", "--point-force-scale", "Factor for the point force term of a source");
-//  args.AddOption(&source.gauss_support, "-gs", "--gauss-support", "Gauss support for Gaussian space functions of a source");
-//  args.AddOption(&source.Mxx, "-mxx", "--moment-tensor-xx", "xx-component of a moment tensor source");
-//  args.AddOption(&source.Mxy, "-mxy", "--moment-tensor-xy", "xy-component of a moment tensor source");
-//  args.AddOption(&source.Myy, "-myy", "--moment-tensor-yy", "yy-component of a moment tensor source");
-//  args.AddOption(&source.type, "-st", "--source-type", "Type of spatial source distribution (0 delta, 1 gauss)");
   args.AddOption(&location(0), "-srcx", "--source-x", "x-coord of a source location");
   args.AddOption(&location(1), "-srcy", "--source-y", "y-coord of a source location");
   args.AddOption(&frequency, "-f0", "--frequency", "Central frequency of a source");

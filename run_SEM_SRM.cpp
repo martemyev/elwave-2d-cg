@@ -23,7 +23,7 @@ void ElasticWave2D::run_SEM_SRM()
               "elements");
 
   FiniteElementCollection *fec = new H1_FECollection(param.order, dim);
-  FiniteElementSpace fespace(&mesh, fec, dim, Ordering::byVDIM);
+  FiniteElementSpace fespace(&mesh, fec, dim); //, Ordering::byVDIM);
   cout << "Number of unknowns: " << fespace.GetVSize() << endl;
 
   const int n_elements = param.nx*param.ny;
@@ -104,6 +104,10 @@ void ElasticWave2D::run_SEM_SRM()
   for (int r = 0; r < n_rec_sets; ++r)
   {
     const string desc = param.sets_of_receivers[r]->description();
+#if defined(DEBUG_WAVE)
+    cout << desc << "\n";
+    param.sets_of_receivers[r]->print_receivers(mesh);
+#endif
     for (int c = 0; c < N_ELAST_COMPONENTS; ++c)
     {
       string seismofile = method_name + param.extra_string + desc + "_u" + d2s(c) + ".bin";
@@ -131,6 +135,10 @@ void ElasticWave2D::run_SEM_SRM()
 
   const string snapshot_filebase = method_name + param.extra_string;
   const int N = u_0.Size();
+
+  vector<int> cells_w_vertices;
+  cells_containing_vertices(mesh, param.nx, param.ny, param.sx, param.sy,
+                            cells_w_vertices);
 
   cout << "N time steps = " << n_time_steps
        << "\nTime loop..." << endl;
@@ -190,6 +198,17 @@ void ElasticWave2D::run_SEM_SRM()
       write_binary(fname.c_str(), v_x.Size(), v_x);
       fname = snapshot_filebase + "_Vy_t" + tstep + ".bin";
       write_binary(fname.c_str(), v_y.Size(), v_y);
+
+      Vector U_x = get_nodal_values(cells_w_vertices, mesh, u_0, 1);
+      Vector U_y = get_nodal_values(cells_w_vertices, mesh, u_0, 2);
+
+      fname = snapshot_filebase + "_Umy_t" + tstep + ".vts";
+      write_vts_vector(fname, "Umy", param.sx, param.sy, param.nx, param.ny, U_x, U_y);
+
+//      U_x -= u_x;
+//      U_y -= u_y;
+//      cout << "||U_x-u_x||_{L^2} = " << U_x.Norml2() << endl;
+//      cout << "||U_y-u_y||_{L^2} = " << U_y.Norml2() << endl;
     }
 
     // for each set of receivers

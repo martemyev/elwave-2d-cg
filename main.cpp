@@ -7,8 +7,6 @@
 using namespace std;
 using namespace mfem;
 
-void show_damp_weights(const Parameters& param);
-
 
 
 int main(int argc, char *argv[])

@@ -199,26 +199,32 @@ void ElasticWave2D::run_SEM_SRM()
       fname = snapshot_filebase + "_Vy_t" + tstep + ".bin";
       write_binary(fname.c_str(), v_y.Size(), v_y);
 
-      Vector U_x = get_nodal_values(cells_w_vertices, mesh, u_0, 1);
-      Vector U_y = get_nodal_values(cells_w_vertices, mesh, u_0, 2);
+      Vector U_x = get_nodal_values(param.sx, param.sy, param.nx, param.ny,
+                                    cells_w_vertices, mesh, u_0, 1);
+      Vector U_y = get_nodal_values(param.sx, param.sy, param.nx, param.ny,
+                                    cells_w_vertices, mesh, u_0, 2);
 
       fname = snapshot_filebase + "_Umy_t" + tstep + ".vts";
       write_vts_vector(fname, "Umy", param.sx, param.sy, param.nx, param.ny, U_x, U_y);
 
-//      U_x -= u_x;
-//      U_y -= u_y;
-//      cout << "||U_x-u_x||_{L^2} = " << U_x.Norml2() << endl;
-//      cout << "||U_y-u_y||_{L^2} = " << U_y.Norml2() << endl;
+      U_x -= u_x;
+      U_y -= u_y;
+      cout << "||U_x-u_x||_{L^2} = " << U_x.Norml2() << endl;
+      cout << "||U_y-u_y||_{L^2} = " << U_y.Norml2() << endl;
     }
 
     // for each set of receivers
     for (int rec = 0; rec < n_rec_sets; ++rec)
     {
       const ReceiversSet *rec_set = param.sets_of_receivers[rec];
-      const Vector U_0 = compute_solution_at_points(rec_set->get_receivers(),
+      const Vector U_0 = compute_solution_at_points(param.sx, param.sy,
+                                                    param.nx, param.ny, mesh,
+                                                    rec_set->get_receivers(),
                                                     rec_set->get_cells_containing_receivers(),
                                                     u_0);
-      const Vector U_2 = compute_solution_at_points(rec_set->get_receivers(),
+      const Vector U_2 = compute_solution_at_points(param.sx, param.sy,
+                                                    param.nx, param.ny, mesh,
+                                                    rec_set->get_receivers(),
                                                     rec_set->get_cells_containing_receivers(),
                                                     u_2);
 

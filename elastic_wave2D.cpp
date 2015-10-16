@@ -183,20 +183,42 @@ void ElasticWave2D::offline_stage()
   b->AddDomainIntegrator(moment_tensor_int);
 }
 */
-Vector compute_solution_at_points(const vector<Vertex>& points,
+
+Vector compute_solution_at_point(double sx, double sy, int nx, int ny,
+                                 const Mesh& mesh, const Vertex& point,
+                                 int cell, const GridFunction& U)
+{
+  const double hx = sx / nx;
+  const double hy = sy / ny;
+
+  const Element *element = mesh.GetElement(cell);
+  Array<int> vert_indices;
+  element->GetVertices(vert_indices);
+  const double *vert0 = mesh.GetVertex(vert_indices[0]); // min coords
+
+  IntegrationPoint ip;
+  ip.x = (point(0) - vert0[0]) / hx;
+  ip.y = (point(1) - vert0[1]) / hy;
+
+  Vector values;
+  U.GetVectorValue(cell, ip, values);
+
+  return values;
+}
+
+Vector compute_solution_at_points(double sx, double sy, int nx, int ny,
+                                  const Mesh& mesh,
+                                  const vector<Vertex>& points,
                                   const vector<int>& cells_containing_points,
                                   const GridFunction& U)
 {
   MFEM_ASSERT(points.size() == cells_containing_points.size(), "Sizes mismatch");
   Vector U_at_points(2*points.size());
-  Vector values(2);
-  IntegrationPoint ip;
+
   for (size_t p = 0; p < points.size(); ++p)
   {
-    ip.x = points[p](0);
-    ip.y = points[p](1);
-    ip.z = points[p](2);
-    U.GetVectorValue(cells_containing_points[p], ip, values);
+    Vector values = compute_solution_at_point(sx, sy, nx, ny, mesh, points[p],
+                                              cells_containing_points[p], U);
     MFEM_ASSERT(values.Size() == 2, "Unexpected vector size");
     U_at_points(2*p+0) = values(0);
     U_at_points(2*p+1) = values(1);
@@ -217,21 +239,19 @@ void cells_containing_vertices(const Mesh& mesh, int nx, int ny, double sx,
   }
 }
 
-Vector get_nodal_values(const vector<int>& cells, const Mesh& mesh,
+Vector get_nodal_values(double sx, double sy, int nx, int ny,
+                        const vector<int>& cells, const Mesh& mesh,
                         const GridFunction& U, int vdim)
 {
   const int nv = mesh.GetNV();
   Vector nodal_values(nv);
-  Vector values(2);
-  IntegrationPoint ip;
 
   for (int v = 0; v < nv; ++v)
   {
     const double *vert = mesh.GetVertex(v);
-    ip.x = vert[0];
-    ip.y = vert[1];
-    ip.z = vert[2];
-    U.GetVectorValue(cells[v], ip, values);
+    Vertex vertex(vert[0], vert[1]);
+    Vector values = compute_solution_at_point(sx, sy, nx, ny, mesh, vertex,
+                                              cells[v], U);
     nodal_values(v) = values(vdim-1);
   }
 

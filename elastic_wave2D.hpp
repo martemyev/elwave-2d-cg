@@ -156,9 +156,14 @@ private:
   void run_SEM_SRM();
 };
 
+mfem::Vector compute_solution_at_point(double sx, double sy, int nx, int ny,
+                                       const mfem::Mesh& mesh,
+                                       const mfem::Vertex& point, int cell,
+                                       const mfem::GridFunction& U);
 
-
-mfem::Vector compute_solution_at_points(const std::vector<mfem::Vertex>& points,
+mfem::Vector compute_solution_at_points(double sx, double sy, int nx, int ny,
+                                        const mfem::Mesh& mesh,
+                                        const std::vector<mfem::Vertex>& points,
                                         const std::vector<int>& cells_containing_points,
                                         const mfem::GridFunction& U);
 
@@ -167,7 +172,8 @@ void show_SRM_damp_weights(const Parameters& param);
 void cells_containing_vertices(const mfem::Mesh& mesh, int nx, int ny,
                                double sx, double sy, std::vector<int>& cells);
 
-mfem::Vector get_nodal_values(const std::vector<int>& cells,
+mfem::Vector get_nodal_values(double sx, double sy, int nx, int ny,
+                              const std::vector<int>& cells,
                               const mfem::Mesh& mesh,
                               const mfem::GridFunction& U, int vdim);
 

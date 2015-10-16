@@ -215,10 +215,14 @@ void ElasticWave2D::run_FEM_ALID()
     for (int rec = 0; rec < n_rec_sets; ++rec)
     {
       const ReceiversSet *rec_set = param.sets_of_receivers[rec];
-      const Vector U_0 = compute_solution_at_points(rec_set->get_receivers(),
+      const Vector U_0 = compute_solution_at_points(param.sx, param.sy,
+                                                    param.nx, param.ny, mesh,
+                                                    rec_set->get_receivers(),
                                                     rec_set->get_cells_containing_receivers(),
                                                     u_0);
-      const Vector U_2 = compute_solution_at_points(rec_set->get_receivers(),
+      const Vector U_2 = compute_solution_at_points(param.sx, param.sy,
+                                                    param.nx, param.ny, mesh,
+                                                    rec_set->get_receivers(),
                                                     rec_set->get_cells_containing_receivers(),
                                                     u_2);
 

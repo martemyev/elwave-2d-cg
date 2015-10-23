@@ -118,30 +118,6 @@ public:
 private:
   const Parameters& param;
 
-  /*mfem::Mesh *mesh;
-  mfem::FiniteElementCollection *fec;
-  mfem::FiniteElementSpace *fespace;
-  mfem::BilinearForm *stif;
-  mfem::BilinearForm *mass;
-  mfem::BilinearForm *dampM, *dampS;
-
-  CWConstCoefficient *rho_coef;
-  CWConstCoefficient *lambda_coef;
-  CWConstCoefficient *mu_coef;
-  CWConstCoefficient *rho_damp_coef;
-  CWConstCoefficient *lambda_damp_coef;
-  CWConstCoefficient *mu_damp_coef;
-
-  mfem::ElasticityIntegrator *elast_int;
-  mfem::VectorMassIntegrator *mass_int;
-  mfem::VectorMassIntegrator *damp_int;
-  VectorPointForce *vector_point_force;
-  MomentTensorSource *momemt_tensor_source;
-  mfem::VectorDomainLFIntegrator *point_force_int;
-  mfem::VectorDomainLFIntegrator *moment_tensor_int;
-
-  mfem::LinearForm *b;*/
-
   /**
    * Finite Element Method (FEM) (non-diagonal mass matrix) with Absorbing
    * Layers by Increasing Damping (ALID) for implementation of absorbing
@@ -156,25 +132,25 @@ private:
   void run_SEM_SRM();
 };
 
-mfem::Vector compute_solution_at_point(double sx, double sy, int nx, int ny,
+void show_SRM_damp_weights(const Parameters& param);
+
+mfem::Vector compute_function_at_point(double sx, double sy, int nx, int ny,
                                        const mfem::Mesh& mesh,
                                        const mfem::Vertex& point, int cell,
                                        const mfem::GridFunction& U);
 
-mfem::Vector compute_solution_at_points(double sx, double sy, int nx, int ny,
+mfem::Vector compute_function_at_points(double sx, double sy, int nx, int ny,
                                         const mfem::Mesh& mesh,
                                         const std::vector<mfem::Vertex>& points,
                                         const std::vector<int>& cells_containing_points,
                                         const mfem::GridFunction& U);
 
-void show_SRM_damp_weights(const Parameters& param);
+void output_snapshots(int time_step, const std::string& snapshot_filebase,
+                      const Parameters& param, const mfem::GridFunction& U,
+                      const mfem::GridFunction& V);
 
-void cells_containing_vertices(const mfem::Mesh& mesh, int nx, int ny,
-                               double sx, double sy, std::vector<int>& cells);
-
-mfem::Vector get_nodal_values(double sx, double sy, int nx, int ny,
-                              const std::vector<int>& cells,
-                              const mfem::Mesh& mesh,
-                              const mfem::GridFunction& U, int vdim);
+void output_seismograms(const Parameters& param, const mfem::Mesh& mesh,
+                        const mfem::GridFunction &U, const mfem::GridFunction &V,
+                        std::ofstream **seisU, std::ofstream **seisV);
 
 #endif // ELWAVE2D_HPP

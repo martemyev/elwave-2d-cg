@@ -38,8 +38,13 @@ void Source::AddOptions(OptionsParser& args)
 double Source::Ricker(double t) const
 {
   const double a  = M_PI*frequency*(t-1./frequency);
-  const double a2 = a*a;
-  return ricker_scale * (1. - 2.*a2)*exp(-a2);
+  return ricker_scale * (1. - 2.*a*a)*exp(-a*a);
+}
+
+double Source::GaussFirstDerivative(double t) const
+{
+  const double a = M_PI*frequency*(t-1./frequency);
+  return ricker_scale * (t-1./frequency)*exp(-a*a);
 }
 
 void Source::PointForce(const Vector& x, Vector& f) const

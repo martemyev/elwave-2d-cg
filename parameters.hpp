@@ -29,6 +29,7 @@ public:
   void AddOptions(mfem::OptionsParser& args);
 
   double Ricker(double t) const;
+  double GaussFirstDerivative(double t) const;
   void PointForce(const mfem::Vector& x, mfem::Vector& f) const;
   void MomentTensorSource(const mfem::Vector& x, mfem::Vector& f) const;
 

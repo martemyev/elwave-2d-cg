@@ -82,16 +82,18 @@ void ElasticWave2D::run_SEM_SRM()
   VectorPointForce vector_point_force(dim, param.source);
   VectorDomainLFIntegrator *point_force_int = new VectorDomainLFIntegrator(vector_point_force);
   point_force_int->SetIntRule(&quad_GLL);
+  LinearForm pointforce(&fespace);
+  pointforce.AddDomainIntegrator(point_force_int);
+  pointforce.Assemble();
+  cout << "||pointforce||_L2 = " << pointforce.Norml2() << endl;
 
   MomentTensorSource momemt_tensor_source(dim, param.source);
   VectorDomainLFIntegrator *moment_tensor_int = new VectorDomainLFIntegrator(momemt_tensor_source);
   moment_tensor_int->SetIntRule(&quad_GLL);
-
-  LinearForm b(&fespace);
-  b.AddDomainIntegrator(point_force_int);
-  b.AddDomainIntegrator(moment_tensor_int);
-  b.Assemble();
-  cout << "||b||_L2 = " << b.Norml2() << endl;
+  LinearForm momenttensor(&fespace);
+  momenttensor.AddDomainIntegrator(moment_tensor_int);
+  momenttensor.Assemble();
+  cout << "||momenttensor||_L2 = " << momenttensor.Norml2() << endl;
 
   Vector diagM; M.GetDiag(diagM); // mass matrix is diagonal
   Vector diagD; D.GetDiag(diagD); // damping matrix is diagonal
@@ -143,7 +145,8 @@ void ElasticWave2D::run_SEM_SRM()
   {
     const double cur_time = time_step * param.dt;
 
-    const double r = param.source.Ricker(cur_time - param.dt);
+    const double r   = param.source.Ricker(cur_time - param.dt);
+    const double gfd = param.source.GaussFirstDerivative(cur_time - param.dt);
 
     Vector y = u_1; y *= 2.0; y -= u_2;        // y = 2*u_1 - u_2
 
@@ -151,10 +154,11 @@ void ElasticWave2D::run_SEM_SRM()
     for (int i = 0; i < N; ++i) z0[i] = diagM[i] * y[i];
 
     Vector z1; z1.SetSize(N); S.Mult(u_1, z1); // z1 = S * u_1
+    Vector z2 = pointforce; z2 *= r;           // z2 = r * pointforce
+    Vector z3 = momenttensor; z3 *= gfd;       // z3 = gfd * momenttensor
 
-    Vector z2 = b; z2 *= r;                    // z2 = r * b
-
-    y = z1; y -= z2; y *= param.dt*param.dt;   // y = dt^2 * (S*u_1 - r*b)
+    // y = dt^2 * (S*u_1 - r*pointforce - gfd*momenttensor)
+    y = z1; y -= z2; y -= z3; y *= param.dt*param.dt;
 
     Vector RHS = z0; RHS -= y;                 // RHS = M*(2*u_1-u_2) - dt^2*(S*u_1-r*b)
 
@@ -163,7 +167,7 @@ void ElasticWave2D::run_SEM_SRM()
     // (M+D)*x_0 = M*(2*x_1-x_2) - dt^2*(S*x_1-r*b) + D*x_2
     for (int i = 0; i < N; ++i) u_0[i] = RHS[i] / (diagM[i]+diagD[i]);
 
-    // velocity
+    // velocity: v = du/dt, we use the central difference here
     v_1  = u_0;
     v_1 -= u_2;
     v_1 /= 2.0*param.dt;

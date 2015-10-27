@@ -104,7 +104,7 @@ void ElasticWave2D::run_SEM_SRM()
   for (int r = 0; r < n_rec_sets; ++r)
   {
     const string desc = param.sets_of_receivers[r]->description();
-#if defined(DEBUG_WAVE)
+#if defined(MFEM_DEBUG)
     cout << desc << "\n";
     param.sets_of_receivers[r]->print_receivers(mesh);
 #endif
@@ -159,7 +159,7 @@ void ElasticWave2D::run_SEM_SRM()
     Vector RHS = z0; RHS -= y;                 // RHS = M*(2*u_1-u_2) - dt^2*(S*u_1-r*b)
 
     for (int i = 0; i < N; ++i) y[i] = diagD[i] * u_2[i]; // y = D * u_2
-    RHS += y;                                                // RHS = M*(2*u_1-u_2) - dt^2*(S*u_1-r*b) + D*u_2
+    RHS += y;                                             // RHS = M*(2*u_1-u_2) - dt^2*(S*u_1-r*b) + D*u_2
     // (M+D)*x_0 = M*(2*x_1-x_2) - dt^2*(S*x_1-r*b) + D*x_2
     for (int i = 0; i < N; ++i) u_0[i] = RHS[i] / (diagM[i]+diagD[i]);
 
@@ -176,7 +176,7 @@ void ElasticWave2D::run_SEM_SRM()
     if (time_step % param.step_snap == 0)
       output_snapshots(time_step, snapshot_filebase, param, u_0, v_1);
 
-    output_seismograms(param, mesh, u_0, v_1, &seisU, &seisV);
+    output_seismograms(param, mesh, u_0, v_1, seisU, seisV);
 
     u_2 = u_1;
     u_1 = u_0;

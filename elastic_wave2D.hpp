@@ -151,6 +151,6 @@ void output_snapshots(int time_step, const std::string& snapshot_filebase,
 
 void output_seismograms(const Parameters& param, const mfem::Mesh& mesh,
                         const mfem::GridFunction &U, const mfem::GridFunction &V,
-                        std::ofstream **seisU, std::ofstream **seisV);
+                        std::ofstream *seisU, std::ofstream *seisV);
 
 #endif // ELWAVE2D_HPP

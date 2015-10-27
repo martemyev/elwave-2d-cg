@@ -191,7 +191,7 @@ void ElasticWave2D::run_FEM_ALID()
     if (time_step % param.step_snap == 0)
       output_snapshots(time_step, snapshot_filebase, param, u_0, v_1);
 
-    output_seismograms(param, mesh, u_0, v_1, &seisU, &seisV);
+    output_seismograms(param, mesh, u_0, v_1, seisU, seisV);
 
     u_2 = u_1;
     u_1 = u_0;

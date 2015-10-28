@@ -1,4 +1,0 @@
-To plot a sparsity pattern of an MFEM matrix:
-1. Print the matrix in a file (using SparseMatrix::PrintMatlab()). Say, file's name is 'matrix.dat'.
-2. In Matlab or Octave: 
-  > load matrix.dat; M=spconvert(matrix); spy(M)

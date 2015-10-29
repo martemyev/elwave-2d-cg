@@ -11,64 +11,27 @@ using namespace mfem;
 
 
 
-//------------------------------------------------------------------------------
-//------------------------------------------------------------------------------
-VectorPointForce::VectorPointForce(int dim, const Source& s)
-  : VectorCoefficient(dim)
-  , source(s)
+ElasticWave2D::ElasticWave2D(const Parameters &p)
+  : param(p)
 { }
 
-void VectorPointForce::Eval(Vector &V, ElementTransformation &T,
-                            const IntegrationPoint &ip)
-{
-  double x[3];
-  Vector transip(x, 3);
-  T.Transform(ip, transip);
-  V.SetSize(vdim);
-  source.PointForce(transip, V);
-}
 
-
-
-//------------------------------------------------------------------------------
-//------------------------------------------------------------------------------
-MomentTensorSource::MomentTensorSource(int dim, const Source& s)
-  : VectorCoefficient(dim)
-  , source(s)
-{ }
-
-void MomentTensorSource::Eval(Vector &V, ElementTransformation &T,
-                              const IntegrationPoint &ip)
-{
-  double x[3];
-  Vector transip(x, 3);
-  T.Transform(ip, transip);
-  V.SetSize(vdim);
-  source.MomentTensorSource(transip, V);
-}
-
-
-
-//------------------------------------------------------------------------------
-//------------------------------------------------------------------------------
-ElasticWave2D::ElasticWave2D(const Parameters &_param)
-  : param(_param)
-{ }
-
-ElasticWave2D::~ElasticWave2D() { }
 
 void ElasticWave2D::run()
 {
-  if (param.method == 0) // FEM
+  if (!strcmp(param.method, "fem") || !strcmp(param.method, "FEM"))
     run_FEM_ALID();
-  else if (param.method == 1) // SEM
+  else if (!strcmp(param.method, "sem") || !strcmp(param.method, "SEM"))
     run_SEM_SRM();
-  else MFEM_ABORT("Unknown method to be used");
+  else MFEM_ABORT("Unknown method to be used: " + string(param.method));
 }
 
 
 
 //------------------------------------------------------------------------------
+//
+// Auxiliary useful functions
+//
 //------------------------------------------------------------------------------
 Vector compute_function_at_point(double sx, double sy, int nx, int ny,
                                  const Mesh& mesh, const Vertex& point,
@@ -92,6 +55,8 @@ Vector compute_function_at_point(double sx, double sy, int nx, int ny,
   return values;
 }
 
+
+
 Vector compute_function_at_points(double sx, double sy, int nx, int ny,
                                   const Mesh& mesh,
                                   const vector<Vertex>& points,
@@ -112,6 +77,8 @@ Vector compute_function_at_points(double sx, double sy, int nx, int ny,
   return U_at_points;
 }
 
+
+
 void output_snapshots(int time_step, const string& snapshot_filebase,
                       const Parameters& param, const GridFunction& U,
                       const GridFunction& V)
@@ -123,7 +90,7 @@ void output_snapshots(int time_step, const string& snapshot_filebase,
   V.GetNodalValues(v_y, 2);
 
   string tstep = d2s(time_step,0,0,0,6), fname;
-  if (param.snapshot_format == 0) // binary format
+  if (!strcmp(param.snapshot_format, "bin"))
   {
     fname = snapshot_filebase + "_Ux_t" + tstep + ".bin";
     write_binary(fname.c_str(), u_x.Size(), u_x);
@@ -134,14 +101,17 @@ void output_snapshots(int time_step, const string& snapshot_filebase,
     fname = snapshot_filebase + "_Vy_t" + tstep + ".bin";
     write_binary(fname.c_str(), v_y.Size(), v_y);
   }
-  else // VTS format
+  else if (!strcmp(param.snapshot_format, "vts"))
   {
     fname = snapshot_filebase + "_U_t" + tstep + ".vts";
     write_vts_vector(fname, "U", param.sx, param.sy, param.nx, param.ny, u_x, u_y);
     fname = snapshot_filebase + "_V_t" + tstep + ".vts";
     write_vts_vector(fname, "V", param.sx, param.sy, param.nx, param.ny, v_x, v_y);
   }
+  else MFEM_ABORT("Unknown snapshot format: " + string(param.snapshot_format));
 }
+
+
 
 void output_seismograms(const Parameters& param, const Mesh& mesh,
                         const GridFunction &U, const GridFunction &V,

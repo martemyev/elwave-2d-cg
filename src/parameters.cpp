@@ -26,11 +26,11 @@ Parameters::Parameters()
   , vs_array(nullptr)
   , damp_layer(100.0)
   , damp_power(3.0)
-  , topsurf(1)
+  , topsurf("free")
   , source()
   , step_snap(1000)
-  , snapshot_format(1)
-  , method(1)
+  , snapshot_format("vts")
+  , method("sem")
   , extra_string("")
   , receivers_file(DEFAULT_FILE_NAME)
 { }
@@ -69,14 +69,14 @@ void Parameters::init(int argc, char **argv)
 
   args.AddOption(&damp_layer, "-dlayer", "--damp-layer", "Thickness of damping layer, m");
   args.AddOption(&damp_power, "-dpower", "--damp-power", "Power in damping coefficient functions");
-  args.AddOption(&topsurf, "-top", "--top-surface", "Top surface: 0 absorbing, 1 free");
+  args.AddOption(&topsurf, "-top", "--top-surface", "Top surface: abs or free");
 
   source.AddOptions(args);
 
   args.AddOption(&step_snap, "-step-snap", "--step-snapshot", "Time step for outputting snapshots");
-  args.AddOption(&snapshot_format, "-snap-format", "--snapshot-format", "Format of snapshots (0 binary, 1 VTS)");
+  args.AddOption(&snapshot_format, "-snap-format", "--snapshot-format", "Format of snapshots (bin, vts)");
 
-  args.AddOption(&method, "-method", "--method", "0 - FEM, 1 - SEM");
+  args.AddOption(&method, "-method", "--method", "Finite elements (fem) or spectral elements (sem)");
 
   args.AddOption(&extra_string, "-extra", "--extra", "Extra string for naming output files");
 
@@ -89,6 +89,8 @@ void Parameters::init(int argc, char **argv)
     throw 1;
   }
   args.PrintOptions(cout);
+
+  source.check_and_update_parameters();
 
   const int n_elements = nx*ny;
 

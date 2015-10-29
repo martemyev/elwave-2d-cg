@@ -22,35 +22,36 @@ public:
 
   void init(int argc, char **argv);
 
-  double sx, sy; // size of the computational domain
-  int nx, ny; // number of cells in x- and y-directions
-  double T; // simulation time
-  double dt; // time step
-  int order; // finite element order
+  double sx, sy; ///< size of the computational domain
+  int nx, ny; ///< number of cells in x- and y-directions
+  double T; ///< simulation time
+  double dt; ///< time step
+  int order; ///< finite element order
 
-  double rho, vp, vs; // homogeneous media properties
+  double rho, vp, vs; ///< homogeneous media properties
 
-  const char *rhofile; // heterogeneous media properties
+  const char *rhofile; ///< heterogeneous media properties
   const char *vpfile;
   const char *vsfile;
 
-  // arrays of values describing media properties
-  double *rho_array, *vp_array, *vs_array;
+  double *rho_array, *vp_array, *vs_array; ///< arrays of values describing
+                                           ///< media properties
 
-  double damp_layer; // thickness of a damping layer
-  double damp_power; // power in damping coefficient functions
-  int topsurf; // top surface: 0 absorbing, 1 free
+  double damp_layer; ///< thickness of a damping layer
+  double damp_power; ///< power in damping coefficient functions
+  const char* topsurf; ///< top surface: absorbing (abs) or free
 
-  Source source; // source of the wave
+  Source source; ///< source of the wave
 
-  int step_snap; // time step for outputting snapshots (every *th time step)
-  int snapshot_format; // 0 - binary, 1 - VTS
+  int step_snap; ///< time step for outputting snapshots (every *th time step)
+  const char* snapshot_format; ///< binary (bin) or VTK-type (vts)
 
-  int method; // 0 - FEM, 1 - SEM
+  const char* method; ///< finite elements (fem) or spectral elements (sem)
 
-  const char *extra_string;
+  const char *extra_string; ///< added to output files for distinguishing the
+                            ///< results
 
-  const char *receivers_file;
+  const char *receivers_file; ///< file describing the sets of receivers
   std::vector<ReceiversSet*> sets_of_receivers;
 
 

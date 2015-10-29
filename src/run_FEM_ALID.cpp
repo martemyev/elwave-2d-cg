@@ -210,7 +210,7 @@ void ElasticWave2D::run_FEM_ALID()
 void compute_damping_weights(const Parameters& param, double *damping_weights)
 {
   bool left = true, right = true, bottom = true;
-  bool top = (param.topsurf == 0 ? true : false);
+  bool top = (!strcmp(param.topsurf, "abs") ? true : false);
 
   const int nx = param.nx;
   const int ny = param.ny;

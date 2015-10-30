@@ -313,4 +313,11 @@ void Parameters::check_parameters() const
   media.check_parameters();
   bc.check_parameters();
 
+  MFEM_VERIFY(T > 0, "Time (" + d2s(T) + ") must be >0");
+  MFEM_VERIFY(dt < T, "dt (" + d2s(dt) + ") must be < T (" + d2s(T) + ")");
+  MFEM_VERIFY(order > 0, "FEM order (" + d2s(order) + ") must be >0");
+  MFEM_VERIFY(step_snap > 0, "step_snap (" + d2s(step_snap) + ") must be >0");
+  MFEM_VERIFY(!strcmp(method, "fem") || !strcmp(method, "FEM") ||
+              !strcmp(method, "sem") || !strcmp(method, "SEM"), "Method (" +
+              string(method) + ") must be either fem or sem");
 }

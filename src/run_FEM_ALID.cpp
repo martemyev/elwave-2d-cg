@@ -1,6 +1,7 @@
 #include "elastic_wave2D.hpp"
 #include "parameters.hpp"
 #include "receivers.hpp"
+#include "source.hpp"
 
 #include <fstream>
 

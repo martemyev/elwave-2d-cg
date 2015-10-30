@@ -3,7 +3,6 @@
 
 #include "config.hpp"
 #include "mfem.hpp"
-#include "source.hpp"
 
 #include <string>
 #include <vector>
@@ -58,23 +57,6 @@ public:
 
   void AddOptions(mfem::OptionsParser& args);
   void check_parameters() const;
-
-//  double Ricker(double t) const;
-//  double GaussFirstDerivative(double t) const;
-//  void PointForce(const mfem::Vector& source_location,
-//                  const mfem::Vector& x, mfem::Vector& f) const;
-//  void MomentTensorSource(const mfem::Vector& source_location,
-//                          const mfem::Vector& x, mfem::Vector& f) const;
-//  void PlaneWaveSource(const Parameters& param, const mfem::Vector& x,
-//                       mfem::Vector& f) const;
-//  void DeltaPointForce(const mfem::Vector& source_location,
-//                       const mfem::Vector& x, mfem::Vector& f) const;
-//  void GaussPointForce(const mfem::Vector& source_location,
-//                       const mfem::Vector& x, mfem::Vector& f) const;
-//  void DivDeltaMomentTensor(const mfem::Vector& source_location,
-//                            const mfem::Vector& x, mfem::Vector& f) const;
-//  void DivGaussMomentTensor(const mfem::Vector& source_location,
-//                            const mfem::Vector& x, mfem::Vector& f) const;
 
 private:
   SourceParameters(const SourceParameters&);

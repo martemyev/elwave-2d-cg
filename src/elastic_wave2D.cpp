@@ -11,12 +11,6 @@ using namespace mfem;
 
 
 
-ElasticWave2D::ElasticWave2D(const Parameters &p)
-  : param(p)
-{ }
-
-
-
 void ElasticWave2D::run()
 {
   if (!strcmp(param.method, "fem") || !strcmp(param.method, "FEM"))

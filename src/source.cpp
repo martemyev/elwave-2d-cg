@@ -70,7 +70,7 @@ void GaussPointForce(const SourceParameters& source,
 void DivDeltaMomentTensor(const SourceParameters&, const Vector&, const Vector&,
                           Vector&)
 {
-  mfem_error("NOT implemented");
+  MFEM_ABORT("NOT implemented");
 }
 
 void DivGaussMomentTensor(const SourceParameters& source,

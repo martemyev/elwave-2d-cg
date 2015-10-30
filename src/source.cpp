@@ -15,6 +15,8 @@ Source::Source()
   , Mxx(1.0), Mxy(0.0), Myy(1.0) // explosive source
   , type_string("pointforce")
   , spatial_function("gauss")
+  , gauss_support(10.0)
+  , plane_wave(false)
   , type(POINT_FORCE)
 { }
 
@@ -30,9 +32,10 @@ void Source::AddOptions(OptionsParser& args)
   args.AddOption(&Mxx, "-mxx", "--moment-tensor-xx", "xx-component of a moment tensor source");
   args.AddOption(&Mxy, "-mxy", "--moment-tensor-xy", "xy-component of a moment tensor source");
   args.AddOption(&Myy, "-myy", "--moment-tensor-yy", "yy-component of a moment tensor source");
-  args.AddOption(&type_string, "-type", "--source-type", "Type of the source (pointforce, momenttensor, planewave)");
+  args.AddOption(&type_string, "-type", "--source-type", "Type of the source (pointforce, momenttensor)");
   args.AddOption(&spatial_function, "-spatial", "--source-spatial", "Spatial function of the source (delta, gauss)");
   args.AddOption(&gauss_support, "-gs", "--gauss-support", "Gauss support for 'gauss' spatial function of the source");
+  args.AddOption(&plane_wave, "-planewave", "--plane-wave", "-noplanewave", "--no-plane-wave", "Plane wave as a source");
 }
 
 
@@ -47,8 +50,6 @@ void Source::check_and_update_parameters()
     type = POINT_FORCE;
   else if (!strcmp(type_string, "momenttensor"))
     type = MOMENT_TENSOR;
-  else if (!strcmp(type_string, "planewave"))
-    type = PLANE_WAVE;
   else
     MFEM_ABORT("Unknown source type: " + string(type_string));
 
@@ -62,7 +63,7 @@ void Source::check_and_update_parameters()
 double Source::Ricker(double t) const
 {
   const double a  = M_PI*frequency*(t-1./frequency);
-  return scale * (1. - 2.*a*a)*exp(-a*a);
+  return scale*(1.-2.*a*a)*exp(-a*a);
 }
 
 
@@ -70,29 +71,31 @@ double Source::Ricker(double t) const
 double Source::GaussFirstDerivative(double t) const
 {
   const double a = M_PI*frequency*(t-1./frequency);
-  return scale * (t-1./frequency)*exp(-a*a);
+  return scale*(t-1./frequency)*exp(-a*a);
 }
 
 
 
-void Source::PointForce(const Vector& x, Vector& f) const
+void Source::PointForce(const Vector& source_location, const Vector& x,
+                        Vector& f) const
 {
-  if (type == 0) // Delta
-    DeltaPointForce(x, f);
-  else if (type == 1) // Gauss
-    GaussPointForce(x, f);
+  if (!strcmp(spatial_function, "delta"))
+    DeltaPointForce(source_location, x, f);
+  else if (!strcmp(spatial_function, "gauss"))
+    GaussPointForce(source_location, x, f);
   else
     MFEM_ABORT("Unknown source spatial function: " + string(spatial_function));
 }
 
 
 
-void Source::MomentTensorSource(const Vector &x, Vector &f) const
+void Source::MomentTensorSource(const Vector& source_location, const Vector &x,
+                                Vector &f) const
 {
-  if (type == 0) // Delta
-    DivDeltaMomentTensor(x, f);
-  else if (type == 1) // Gauss
-    DivGaussMomentTensor(x, f);
+  if (!strcmp(spatial_function, "delta"))
+    DivDeltaMomentTensor(source_location, x, f);
+  else if (!strcmp(spatial_function, "gauss"))
+    DivGaussMomentTensor(source_location, x, f);
   else
     MFEM_ABORT("Unknown source spatial function: " + string(spatial_function));
 }
@@ -110,18 +113,28 @@ void Source::PlaneWaveSource(const Parameters& param, const Vector &x,
   const double layer = param.damp_layer;
   const double tol = FLOAT_NUMBERS_EQUALITY_TOLERANCE;
 
-  f = 0.0;
-  if (fabs(py - location(1)) < tol &&
-      px-layer+tol > X0 && px+layer-tol < X1)
-    f(1) = 1.0;
+  // if the point 'x' is on the plane of the plane wave, and it's not in the
+  // absorbing layer, we have a source located at the exact same point
+  if (fabs(py - location(1)) < tol) // &&
+      //px-layer+tol > X0 && px+layer-tol < X1)
+  {
+    if (type == POINT_FORCE)
+      PointForce(x, x, f);
+    else if (type == MOMENT_TENSOR)
+      MomentTensorSource(x, x, f);
+    else MFEM_ABORT("Unknown source type: " + string(type_string));
+  }
+  else
+    f = 0.0;
 }
 
 
 
-void Source::DeltaPointForce(const Vector& x, Vector& f) const
+void Source::DeltaPointForce(const Vector& source_location, const Vector& x,
+                             Vector& f) const
 {
-  const double tol = 1e-2;
-  const double loc[] = { location(0), location(1) };
+  const double tol = FLOAT_NUMBERS_EQUALITY_TOLERANCE;
+  const double loc[] = { source_location(0), source_location(1) };
   double value = 0.0;
   if (x.DistanceTo(loc) < tol)
     value = 1.0;
@@ -132,10 +145,11 @@ void Source::DeltaPointForce(const Vector& x, Vector& f) const
 
 
 
-void Source::GaussPointForce(const Vector& x, Vector& f) const
+void Source::GaussPointForce(const Vector& source_location, const Vector& x,
+                             Vector& f) const
 {
-  const double xdiff  = x(0)-location(0);
-  const double ydiff  = x(1)-location(1);
+  const double xdiff  = x(0) - source_location(0);
+  const double ydiff  = x(1) - source_location(1);
   const double xdiff2 = xdiff*xdiff;
   const double ydiff2 = ydiff*ydiff;
   const double h2 = gauss_support*gauss_support;
@@ -146,17 +160,18 @@ void Source::GaussPointForce(const Vector& x, Vector& f) const
 
 
 
-void Source::DivDeltaMomentTensor(const Vector& x, Vector& f) const
+void Source::DivDeltaMomentTensor(const Vector&, const Vector&, Vector&) const
 {
   mfem_error("NOT implemented");
 }
 
 
 
-void Source::DivGaussMomentTensor(const Vector& x, Vector& f) const
+void Source::DivGaussMomentTensor(const Vector& source_location,
+                                  const Vector& x, Vector& f) const
 {
-  const double xdiff  = x(0)-location(0);
-  const double ydiff  = x(1)-location(1);
+  const double xdiff  = x(0) - source_location(0);
+  const double ydiff  = x(1) - source_location(1);
   const double xdiff2 = xdiff*xdiff;
   const double ydiff2 = ydiff*ydiff;
   const double h2 = gauss_support*gauss_support;
@@ -175,18 +190,24 @@ void Source::DivGaussMomentTensor(const Vector& x, Vector& f) const
 VectorPointForce::VectorPointForce(int dim, const Source& s)
   : VectorCoefficient(dim)
   , source(s)
-{ }
+{
+  location.SetSize(vdim);
+  for (int i = 0; i < vdim; ++i)
+    location(i) = source.location(i);
+}
 
 
 
 void VectorPointForce::Eval(Vector &V, ElementTransformation &T,
                             const IntegrationPoint &ip)
 {
-  double x[3];
-  Vector transip(x, 3);
+  Vector transip;
   T.Transform(ip, transip);
   V.SetSize(vdim);
-  source.PointForce(transip, V);
+  Vector location(vdim);
+  for (int i = 0; i < vdim; ++i)
+    location(i) = source.location(i);
+  source.PointForce(location, transip, V);
 }
 
 
@@ -196,18 +217,21 @@ void VectorPointForce::Eval(Vector &V, ElementTransformation &T,
 MomentTensorSource::MomentTensorSource(int dim, const Source& s)
   : VectorCoefficient(dim)
   , source(s)
-{ }
+{
+  location.SetSize(vdim);
+  for (int i = 0; i < vdim; ++i)
+    location(i) = source.location(i);
+}
 
 
 
 void MomentTensorSource::Eval(Vector &V, ElementTransformation &T,
                               const IntegrationPoint &ip)
 {
-  double x[3];
-  Vector transip(x, 3);
+  Vector transip;
   T.Transform(ip, transip);
   V.SetSize(vdim);
-  source.MomentTensorSource(transip, V);
+  source.MomentTensorSource(location, transip, V);
 }
 
 

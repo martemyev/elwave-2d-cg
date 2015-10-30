@@ -86,39 +86,41 @@ void ElasticWave2D::run_SEM_SRM()
   D *= 0.5*param.dt*omega;
 
   LinearForm b(&fespace);
-  switch (param.source.type)
+  if (param.source.plane_wave)
   {
-    case Source::POINT_FORCE:
+    PlaneWaveSource plane_wave_source(dim, param);
+    VectorDomainLFIntegrator *plane_wave_int =
+        new VectorDomainLFIntegrator(plane_wave_source);
+    plane_wave_int->SetIntRule(&quad_GLL);
+    b.AddDomainIntegrator(plane_wave_int);
+    b.Assemble();
+  }
+  else
+  {
+    switch (param.source.type)
     {
-      VectorPointForce vector_point_force(dim, param.source);
-      VectorDomainLFIntegrator *point_force_int =
-          new VectorDomainLFIntegrator(vector_point_force);
-      point_force_int->SetIntRule(&quad_GLL);
-      b.AddDomainIntegrator(point_force_int);
-      b.Assemble();
-      break;
+      case Source::POINT_FORCE:
+      {
+        VectorPointForce vector_point_force(dim, param.source);
+        VectorDomainLFIntegrator *point_force_int =
+            new VectorDomainLFIntegrator(vector_point_force);
+        point_force_int->SetIntRule(&quad_GLL);
+        b.AddDomainIntegrator(point_force_int);
+        b.Assemble();
+        break;
+      }
+      case Source::MOMENT_TENSOR:
+      {
+        MomentTensorSource momemt_tensor_source(dim, param.source);
+        VectorDomainLFIntegrator *moment_tensor_int =
+            new VectorDomainLFIntegrator(momemt_tensor_source);
+        moment_tensor_int->SetIntRule(&quad_GLL);
+        b.AddDomainIntegrator(moment_tensor_int);
+        b.Assemble();
+        break;
+      }
+      default: MFEM_ABORT("Unknown source type");
     }
-    case Source::MOMENT_TENSOR:
-    {
-      MomentTensorSource momemt_tensor_source(dim, param.source);
-      VectorDomainLFIntegrator *moment_tensor_int =
-          new VectorDomainLFIntegrator(momemt_tensor_source);
-      moment_tensor_int->SetIntRule(&quad_GLL);
-      b.AddDomainIntegrator(moment_tensor_int);
-      b.Assemble();
-      break;
-    }
-    case Source::PLANE_WAVE:
-    {
-      PlaneWaveSource plane_wave_source(dim, param);
-      VectorDomainLFIntegrator *plane_wave_int =
-          new VectorDomainLFIntegrator(plane_wave_source);
-      plane_wave_int->SetIntRule(&quad_GLL);
-      b.AddDomainIntegrator(plane_wave_int);
-      b.Assemble();
-      break;
-    }
-    default: MFEM_ABORT("Unknown source type");
   }
   cout << "||b||_L2 = " << b.Norml2() << " ";
 
@@ -172,11 +174,11 @@ void ElasticWave2D::run_SEM_SRM()
   {
     const double cur_time = time_step * param.dt;
     double time_val; // the value of the time-dependent part of the source
-    if (param.source.type == Source::POINT_FORCE ||
-        param.source.type == Source::PLANE_WAVE)
+    if (param.source.type == Source::POINT_FORCE)
       time_val = param.source.Ricker(cur_time - param.dt);
     else if (param.source.type == Source::MOMENT_TENSOR)
       time_val = param.source.GaussFirstDerivative(cur_time - param.dt);
+    else MFEM_ABORT("Unknown source type: " + string(param.source.type_string));
 
     Vector y = u_1; y *= 2.0; y -= u_2;        // y = 2*u_1 - u_2
 
@@ -281,7 +283,7 @@ double stif_damp_weight(const Vector& point, const Parameters& param)
   const double Y0 = 0;
   const double Y1 = param.sy;
   const double layer = param.damp_layer;
-  const double power = param.damp_power; //+1;
+  const double power = param.damp_power+1;
   const double C0 = log(100.0);
 
   // coef for the stif matrix in a damping region is computed

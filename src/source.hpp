@@ -16,16 +16,18 @@ public:
   Source();
   ~Source() { }
 
-  enum SourceType { POINT_FORCE, MOMENT_TENSOR, PLANE_WAVE };
+  enum SourceType { POINT_FORCE, MOMENT_TENSOR };
 
   mfem::Vertex location;
   double frequency;
   double direction; ///< The direction of the point force source: 1 OX, 2 OY
   double scale;
   double Mxx, Mxy, Myy; ///< components of a moment tensor
-  const char *type_string; ///< "pointforce", "momenttensor", "planewave"
+  const char *type_string; ///< "pointforce", "momenttensor"
   const char *spatial_function; ///< "delta", "gauss"
   double gauss_support; ///< size of the support for the "gauss" spatial function
+  bool plane_wave; ///< plane wave as a source at the depth of y-coordinate of
+                   ///< the source location
 
   SourceType type;
 
@@ -34,16 +36,23 @@ public:
 
   double Ricker(double t) const;
   double GaussFirstDerivative(double t) const;
-  void PointForce(const mfem::Vector& x, mfem::Vector& f) const;
-  void MomentTensorSource(const mfem::Vector& x, mfem::Vector& f) const;
+
+  void PointForce(const mfem::Vector& source_location,
+                  const mfem::Vector& x, mfem::Vector& f) const;
+  void MomentTensorSource(const mfem::Vector& source_location,
+                          const mfem::Vector& x, mfem::Vector& f) const;
   void PlaneWaveSource(const Parameters& param, const mfem::Vector& x,
                        mfem::Vector& f) const;
 
 private:
-  void DeltaPointForce(const mfem::Vector& x, mfem::Vector& f) const;
-  void GaussPointForce(const mfem::Vector& x, mfem::Vector& f) const;
-  void DivDeltaMomentTensor(const mfem::Vector& x, mfem::Vector& f) const;
-  void DivGaussMomentTensor(const mfem::Vector& x, mfem::Vector& f) const;
+  void DeltaPointForce(const mfem::Vector& source_location,
+                       const mfem::Vector& x, mfem::Vector& f) const;
+  void GaussPointForce(const mfem::Vector& source_location,
+                       const mfem::Vector& x, mfem::Vector& f) const;
+  void DivDeltaMomentTensor(const mfem::Vector& source_location,
+                            const mfem::Vector& x, mfem::Vector& f) const;
+  void DivGaussMomentTensor(const mfem::Vector& source_location,
+                            const mfem::Vector& x, mfem::Vector& f) const;
 };
 
 
@@ -62,6 +71,7 @@ public:
 
 private:
   const Source& source;
+  mfem::Vector location;
 };
 
 
@@ -80,6 +90,7 @@ public:
 
 private:
   const Source& source;
+  mfem::Vector location;
 };
 
 

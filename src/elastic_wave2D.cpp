@@ -104,9 +104,11 @@ void output_snapshots(int time_step, const string& snapshot_filebase,
   else if (!strcmp(param.snapshot_format, "vts"))
   {
     fname = snapshot_filebase + "_U_t" + tstep + ".vts";
-    write_vts_vector(fname, "U", param.sx, param.sy, param.nx, param.ny, u_x, u_y);
+    write_vts_vector(fname, "U", param.grid.sx, param.grid.sy, param.grid.nx,
+                     param.grid.ny, u_x, u_y);
     fname = snapshot_filebase + "_V_t" + tstep + ".vts";
-    write_vts_vector(fname, "V", param.sx, param.sy, param.nx, param.ny, v_x, v_y);
+    write_vts_vector(fname, "V", param.grid.sx, param.grid.sy, param.grid.nx,
+                     param.grid.ny, v_x, v_y);
   }
   else MFEM_ABORT("Unknown snapshot format: " + string(param.snapshot_format));
 }
@@ -130,14 +132,14 @@ void output_seismograms(const Parameters& param, const Mesh& mesh,
 
     const ReceiversSet *rec_set = param.sets_of_receivers[rec];
     // displacement at the receivers
-    const Vector u = compute_function_at_points(param.sx, param.sy,
-                                                param.nx, param.ny, mesh,
+    const Vector u = compute_function_at_points(param.grid.sx, param.grid.sy,
+                                                param.grid.nx, param.grid.ny, mesh,
                                                 rec_set->get_receivers(),
                                                 rec_set->get_cells_containing_receivers(),
                                                 U);
     // velocity at the receivers
-    const Vector v = compute_function_at_points(param.sx, param.sy,
-                                                param.nx, param.ny, mesh,
+    const Vector v = compute_function_at_points(param.grid.sx, param.grid.sy,
+                                                param.grid.nx, param.grid.ny, mesh,
                                                 rec_set->get_receivers(),
                                                 rec_set->get_cells_containing_receivers(),
                                                 V);

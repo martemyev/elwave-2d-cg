@@ -15,17 +15,16 @@ void get_damp_alphas(double source_frequency, double &alpha1, double &alpha2);
 void ElasticWave2D::run_FEM_ALID()
 {
   bool generate_edges = 1;
-  Mesh mesh(param.nx, param.ny, Element::QUADRILATERAL, generate_edges,
-            param.sx, param.sy);
+  Mesh mesh(param.grid.nx, param.grid.ny, Element::QUADRILATERAL,
+            generate_edges, param.grid.sx, param.grid.sy);
   const int dim = mesh.Dimension();
-  MFEM_VERIFY(param.nx*param.ny == mesh.GetNE(), "Unexpected number of mesh "
-              "elements");
+  const int n_elements = param.grid.nx*param.grid.ny;
+  MFEM_VERIFY(n_elements == mesh.GetNE(), "Unexpected number of mesh elements");
 
   FiniteElementCollection *fec = new H1_FECollection(param.order, dim);
   FiniteElementSpace fespace(&mesh, fec, dim, Ordering::byVDIM);
   cout << "Number of unknowns: " << fespace.GetVSize() << endl;
 
-  const int n_elements = param.nx*param.ny;
   double *lambda_array = new double[n_elements];
   double *mu_array     = new double[n_elements];
 
@@ -38,9 +37,9 @@ void ElasticWave2D::run_FEM_ALID()
 
   for (int i = 0; i < n_elements; ++i)
   {
-    const double rho = param.rho_array[i];
-    const double vp  = param.vp_array[i];
-    const double vs  = param.vs_array[i];
+    const double rho = param.media.rho_array[i];
+    const double vp  = param.media.vp_array[i];
+    const double vs  = param.media.vs_array[i];
     const double w   = damp_weights[i];
 
     lambda_array[i]  = rho*(vp*vp - 2.*vs*vs);
@@ -51,7 +50,8 @@ void ElasticWave2D::run_FEM_ALID()
     mu_w_array[i]    = mu_array[i]*w;
   }
 
-  CWConstCoefficient rho_coef(param.rho_array, 0);
+  const bool own_array = false;
+  CWConstCoefficient rho_coef(param.media.rho_array, own_array);
   CWConstCoefficient lambda_coef(lambda_array);
   CWConstCoefficient mu_coef(mu_array);
 
@@ -107,8 +107,8 @@ void ElasticWave2D::run_FEM_ALID()
   Sys += M;
   GSSmoother prec(Sys);
 
-  VectorPointForce vector_point_force(dim, param.source);
-  MomentTensorSource momemt_tensor_source(dim, param.source);
+  VectorPointForce vector_point_force(dim, param);
+  MomentTensorSource momemt_tensor_source(dim, param);
 
   LinearForm b(&fespace);
   b.AddDomainIntegrator(new VectorDomainLFIntegrator(vector_point_force));
@@ -159,22 +159,17 @@ void ElasticWave2D::run_FEM_ALID()
   {
     const double cur_time = time_step * param.dt;
 
-    const double r = param.source.Ricker(cur_time - param.dt);
+    const double r = RickerWavelet(param.source, cur_time - param.dt);
 
     Vector y = u_1; y *= 2.0; y -= u_2;        // y = 2*u_1 - u_2
-
     Vector z0; z0.SetSize(N); M.Mult(y, z0);   // z0 = M * (2*u_1 - u_2)
-
     Vector z1; z1.SetSize(N); S.Mult(u_1, z1); // z1 = S * u_1
-
     Vector z2 = b; z2 *= r;                    // z2 = r * b
-
     y = z1; y -= z2; y *= param.dt*param.dt;   // y = dt^2 * (S*u_1 - r*b)
-
     Vector RHS = z0; RHS -= y;                 // RHS = M*(2*u_1-u_2) - dt^2*(S*u_1-r*b)
-
     D.Mult(u_2, y);                            // y = D * u_2
     RHS += y;                                  // RHS = M*(2*u_1-u_2) - dt^2*(S*u_1-r*b) + D*u_2
+
     // (M+D)*u_0 = M*(2*u_1-u_2) - dt^2*(S*u_1-r*b) + D*u_2
     PCG(Sys, prec, RHS, u_0, 0, 200, 1e-12, 0.0);
 
@@ -209,17 +204,19 @@ void ElasticWave2D::run_FEM_ALID()
 
 void compute_damping_weights(const Parameters& param, double *damping_weights)
 {
-  bool left = true, right = true, bottom = true;
-  bool top = (!strcmp(param.topsurf, "abs") ? true : false);
+  const bool left   = (!strcmp(param.bc.left,   "abs") ? true : false);
+  const bool right  = (!strcmp(param.bc.right,  "abs") ? true : false);
+  const bool bottom = (!strcmp(param.bc.bottom, "abs") ? true : false);
+  const bool top    = (!strcmp(param.bc.top,    "abs") ? true : false);
 
-  const int nx = param.nx;
-  const int ny = param.ny;
-  const double X0 = 0;
-  const double X1 = param.sx;
-  const double Y0 = 0;
-  const double Y1 = param.sy;
-  const double layer = param.damp_layer;
-  const double power = param.damp_power;
+  const int nx = param.grid.nx;
+  const int ny = param.grid.ny;
+  const double X0 = 0.0;
+  const double X1 = param.grid.sx;
+  const double Y0 = 0.0;
+  const double Y1 = param.grid.sy;
+  const double layer = param.bc.damp_layer;
+  const double power = param.bc.damp_power;
 
   const double hx = (X1 - X0) / nx;
   const double hy = (Y1 - Y0) / ny;

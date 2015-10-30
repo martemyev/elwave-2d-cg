@@ -5,55 +5,29 @@
 #include "mfem.hpp"
 
 class Parameters;
+class SourceParameters;
 
 
-/**
- * Parameters describing the source and related functions.
- */
-class Source
-{
-public:
-  Source();
-  ~Source() { }
 
-  enum SourceType { POINT_FORCE, MOMENT_TENSOR };
+double RickerWavelet(const SourceParameters& source, double t);
+double GaussFirstDerivative(const SourceParameters& source, double t);
 
-  mfem::Vertex location;
-  double frequency;
-  double direction; ///< The direction of the point force source: 1 OX, 2 OY
-  double scale;
-  double Mxx, Mxy, Myy; ///< components of a moment tensor
-  const char *type_string; ///< "pointforce", "momenttensor"
-  const char *spatial_function; ///< "delta", "gauss"
-  double gauss_support; ///< size of the support for the "gauss" spatial function
-  bool plane_wave; ///< plane wave as a source at the depth of y-coordinate of
-                   ///< the source location
+void PointForce(const SourceParameters& source, const mfem::Vector& location,
+                const mfem::Vector& x, mfem::Vector& f);
+void MomentTensor(const SourceParameters& source, const mfem::Vector& location,
+                  const mfem::Vector& x, mfem::Vector& f);
 
-  SourceType type;
-
-  void AddOptions(mfem::OptionsParser& args);
-  void check_and_update_parameters();
-
-  double Ricker(double t) const;
-  double GaussFirstDerivative(double t) const;
-
-  void PointForce(const mfem::Vector& source_location,
-                  const mfem::Vector& x, mfem::Vector& f) const;
-  void MomentTensorSource(const mfem::Vector& source_location,
-                          const mfem::Vector& x, mfem::Vector& f) const;
-  void PlaneWaveSource(const Parameters& param, const mfem::Vector& x,
-                       mfem::Vector& f) const;
-
-private:
-  void DeltaPointForce(const mfem::Vector& source_location,
-                       const mfem::Vector& x, mfem::Vector& f) const;
-  void GaussPointForce(const mfem::Vector& source_location,
-                       const mfem::Vector& x, mfem::Vector& f) const;
-  void DivDeltaMomentTensor(const mfem::Vector& source_location,
-                            const mfem::Vector& x, mfem::Vector& f) const;
-  void DivGaussMomentTensor(const mfem::Vector& source_location,
-                            const mfem::Vector& x, mfem::Vector& f) const;
-};
+void DeltaPointForce(const SourceParameters& source,
+                     const mfem::Vector& location, const mfem::Vector& x,
+                     mfem::Vector& f);
+void GaussPointForce(const SourceParameters& source,
+                     const mfem::Vector& location, const mfem::Vector& x,
+                     mfem::Vector& f);
+void DivDeltaMomentTensor(const SourceParameters&, const mfem::Vector&,
+                          const mfem::Vector&, mfem::Vector&);
+void DivGaussMomentTensor(const SourceParameters& source,
+                          const mfem::Vector& location, const mfem::Vector& x,
+                          mfem::Vector& f);
 
 
 
@@ -63,14 +37,14 @@ private:
 class VectorPointForce: public mfem::VectorCoefficient
 {
 public:
-  VectorPointForce(int dim, const Source& s);
+  VectorPointForce(int dim, const Parameters& p);
   ~VectorPointForce() { }
 
   void Eval(mfem::Vector &V, mfem::ElementTransformation &T,
             const mfem::IntegrationPoint &ip);
 
 private:
-  const Source& source;
+  const Parameters& param;
   mfem::Vector location;
 };
 
@@ -82,14 +56,14 @@ private:
 class MomentTensorSource: public mfem::VectorCoefficient
 {
 public:
-  MomentTensorSource(int dim, const Source& s);
+  MomentTensorSource(int dim, const Parameters& p);
   ~MomentTensorSource() { }
 
   void Eval(mfem::Vector &V, mfem::ElementTransformation &T,
             const mfem::IntegrationPoint &ip);
 
 private:
-  const Source& source;
+  const Parameters& param;
   mfem::Vector location;
 };
 

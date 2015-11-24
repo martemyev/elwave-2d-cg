@@ -8,9 +8,16 @@ if(NOT CMAKE_BUILD_TYPE)
 endif()
 string(TOUPPER ${CMAKE_BUILD_TYPE} BUILD_TYPE)
 
-set(MFEM_DIR "/u/artemyev/projects/mfem/")
+set(MFEM_DIR "/u/artemyev/projects/mfem")
+if(BUILD_TYPE MATCHES DEBUG)
+  set(MFEM_BUILD "serialdebug")
+else()
+  set(MFEM_BUILD "serial")
+endif()
 include_directories("${MFEM_DIR}")
-link_directories("${MFEM_DIR}/build")
+include_directories("${MFEM_DIR}/${MFEM_BUILD}")
+
+link_directories("${MFEM_DIR}/${MFEM_BUILD}")
 
 file(GLOB SRC_LIST "${PROJECT_SOURCE_DIR}/src/*.cpp")
 file(GLOB HDR_LIST "${PROJECT_SOURCE_DIR}/src/*.hpp")

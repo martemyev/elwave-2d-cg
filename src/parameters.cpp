@@ -2,6 +2,7 @@
 #include "receivers.hpp"
 #include "utilities.hpp"
 
+#include <algorithm>
 #include <cfloat>
 
 using namespace std;
@@ -95,9 +96,9 @@ void SourceParameters::check_parameters() const
 //
 //------------------------------------------------------------------------------
 MediaPropertiesParameters::MediaPropertiesParameters()
-  : rho(2500)
-  , vp(3500)
-  , vs(2000)
+  : rho(2500.0)
+  , vp(3500.0)
+  , vs(2000.0)
   , rhofile(DEFAULT_FILE_NAME)
   , vpfile(DEFAULT_FILE_NAME)
   , vsfile(DEFAULT_FILE_NAME)
@@ -222,6 +223,93 @@ void BoundaryConditionsParameters::check_parameters() const
 
 //------------------------------------------------------------------------------
 //
+// Reservoir parameters
+//
+//------------------------------------------------------------------------------
+ReservoirParameters::ReservoirParameters()
+  : exists(false)                     // no reservoir by default
+  , nx(0), ny(0)                      // if not set up - no reservoir
+  , x0(0.0), x1(0.0)
+  , y0(0.0), y1(0.0)
+  , rhofile(DEFAULT_FILE_NAME)
+  , vpfile(DEFAULT_FILE_NAME)
+  , vsfile(DEFAULT_FILE_NAME)
+  , rho_array(nullptr)
+  , vp_array(nullptr)
+  , vs_array(nullptr)
+  , min_rho(DBL_MAX), max_rho(DBL_MIN)
+  , min_vp (DBL_MAX), max_vp (DBL_MIN)
+  , min_vs (DBL_MAX), max_vs (DBL_MIN)
+{ }
+
+ReservoirParameters::~ReservoirParameters()
+{
+  delete[] rho_array;
+  delete[] vp_array;
+  delete[] vs_array;
+}
+
+void ReservoirParameters::AddOptions(OptionsParser &args)
+{
+  args.AddOption(&nx, "-rsr-nx", "--reservoir-nx", "Number of cells in x-direction in reservoir layer");
+  args.AddOption(&ny, "-rsr-ny", "--reservoir-ny", "Number of cells in y-direction in reservoir layer");
+  args.AddOption(&x0, "-rsr-x0", "--reservoir-x0", "Left boundary of the reservoir layer, m");
+  args.AddOption(&x1, "-rsr-x1", "--reservoir-x1", "Right boundary of the reservoir layer, m");
+  args.AddOption(&y0, "-rsr-y0", "--reservoir-y0", "Bottom boundary of the reservoir layer, m");
+  args.AddOption(&y1, "-rsr-y1", "--reservoir-y1", "top boundary of the reservoir layer, m");
+  args.AddOption(&rhofile, "-rsr-rhofile", "--rsr-rhofile", "Density file for reservoir, in kg/m^3");
+  args.AddOption(&vpfile,  "-rsr-vpfile",  "--rsr-vpfile", "P-wave velocity file for reservoir, in m/s");
+  args.AddOption(&vsfile,  "-rsr-vsfile",  "--rsr-vsfile", "S-wave velocity file for reservoir, in m/s");
+}
+
+void ReservoirParameters::check_parameters(const GridParameters& grid) const
+{
+  if (nx*ny > 0)
+  {
+    MFEM_VERIFY(x0 > 0, "Left boundary of the reservoir (" + d2s(x0) +
+                ") should be >0");
+    MFEM_VERIFY(x1 < grid.sx, "Right boundary of the reservoir (" + d2s(x1) +
+                ") should be <sx (size domain in x-direction: " +
+                d2s(grid.sx) + ")");
+    MFEM_VERIFY(y0 > 0, "Bottom boundary of the reservoir (" + d2s(y0) +
+                ") should be >0");
+    MFEM_VERIFY(y1 < grid.sy, "Top boundary of the reservoir (" + d2s(y1) +
+                ") should be <sy (size domain in y-direction: " +
+                d2s(grid.sy) + ")");
+    MFEM_VERIFY(strcmp(rhofile, DEFAULT_FILE_NAME), "rhofile for reservoir is "
+                "not set up");
+    MFEM_VERIFY(strcmp(vpfile, DEFAULT_FILE_NAME), "rhofile for reservoir is "
+                "not set up");
+    MFEM_VERIFY(strcmp(vsfile, DEFAULT_FILE_NAME), "rhofile for reservoir is "
+                "not set up");
+  }
+}
+
+void ReservoirParameters::init()
+{
+  if (nx*ny > 0) exists = true;
+  else return; // if the reservoir doesn't exist - there is nothing to initialize
+
+  const int n_elements = nx*ny;
+
+  rho_array = new double[n_elements];
+  vp_array  = new double[n_elements];
+  vs_array  = new double[n_elements];
+
+  read_binary(rhofile, n_elements, rho_array);
+  get_minmax(rho_array, n_elements, min_rho, max_rho);
+
+  read_binary(vpfile, n_elements, vp_array);
+  get_minmax(vp_array, n_elements, min_vp, max_vp);
+
+  read_binary(vsfile, n_elements, vs_array);
+  get_minmax(vs_array, n_elements, min_vs, max_vs);
+}
+
+
+
+//------------------------------------------------------------------------------
+//
 // All parameters of the problem to be solved
 //
 //------------------------------------------------------------------------------
@@ -254,6 +342,7 @@ void Parameters::init(int argc, char **argv)
   source.AddOptions(args);
   media.AddOptions(args);
   bc.AddOptions(args);
+  reservoir.AddOptions(args);
 
   args.AddOption(&T, "-T", "--time-end", "Simulation time, s");
   args.AddOption(&dt, "-dt", "--time-step", "Time step, s");
@@ -275,9 +364,18 @@ void Parameters::init(int argc, char **argv)
   check_parameters();
 
   media.init(grid);
+  reservoir.init();
 
-  const double min_wavelength = min(media.min_vp, media.min_vs) /
-                                (2.0*source.frequency);
+  vector<double> min_velocities;
+  min_velocities.push_back(media.min_vp);
+  min_velocities.push_back(media.min_vs);
+  if (reservoir.exists)
+  {
+    min_velocities.push_back(reservoir.min_vp);
+    min_velocities.push_back(reservoir.min_vs);
+  }
+  const double v_min = *min_element(min_velocities.begin(), min_velocities.end());
+  const double min_wavelength = v_min / (2.0*source.frequency);
   cout << "min wavelength = " << min_wavelength << endl;
 
   if (bc.damp_layer < 2.5*min_wavelength)
@@ -312,6 +410,7 @@ void Parameters::check_parameters() const
   source.check_parameters();
   media.check_parameters();
   bc.check_parameters();
+  reservoir.check_parameters(grid);
 
   MFEM_VERIFY(T > 0, "Time (" + d2s(T) + ") must be >0");
   MFEM_VERIFY(dt < T, "dt (" + d2s(dt) + ") must be < T (" + d2s(T) + ")");

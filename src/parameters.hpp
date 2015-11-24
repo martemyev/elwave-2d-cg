@@ -123,6 +123,40 @@ private:
 
 
 /**
+ * Parameters describing the oil and water saturated reservoir layer located
+ * somewhere in the computational domain.
+ */
+class ReservoirParameters
+{
+public:
+  ReservoirParameters();
+  ~ReservoirParameters();
+
+  bool exists; ///< whether the reservoir exists
+  int nx, ny; ///< number of cells in the reservoir layer
+  double x0, x1; ///< left and right boundaries of the reservoir layer
+  double y0, y1; ///< bottom and top boundaries of the reservoir layer
+  const char *rhofile; ///< file names for reservoir seismic properties
+  const char *vpfile;
+  const char *vsfile;
+
+  double *rho_array, *vp_array, *vs_array; ///< arrays of values describing
+                                           ///< reservoir seismic properties
+
+  double min_rho, max_rho, min_vp, max_vp, min_vs, max_vs;
+
+  void AddOptions(mfem::OptionsParser& args);
+  void check_parameters(const GridParameters& grid) const;
+  void init();
+
+private:
+  ReservoirParameters(const ReservoirParameters&);
+  ReservoirParameters& operator=(const ReservoirParameters&);
+};
+
+
+
+/**
  * Parameters of the problem to be solved.
  */
 class Parameters
@@ -135,6 +169,7 @@ public:
   SourceParameters source;
   MediaPropertiesParameters media;
   BoundaryConditionsParameters bc;
+  ReservoirParameters reservoir;
 
   double T; ///< simulation time
   double dt; ///< time step

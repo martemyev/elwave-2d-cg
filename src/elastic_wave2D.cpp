@@ -22,6 +22,120 @@ void ElasticWave2D::run()
 
 
 
+double RhoCoefficient::Eval(mfem::ElementTransformation &T,
+                            const mfem::IntegrationPoint &ip)
+{
+  double rho;
+  Vector transip;
+  T.Transform(ip, transip);
+
+  if (param.reservoir.contains(transip))
+  {
+    int cell = param.reservoir.find_cell(transip);
+    MFEM_ASSERT(cell >= 0 && cell < param.reservoir.nx*param.reservoir.ny,
+                "cell index " + d2s(cell) + " is out of range for reservoir");
+    rho = param.reservoir.rho_array[cell];
+  }
+  else
+  {
+    MFEM_ASSERT(T.ElementNo >= 0 && T.ElementNo < param.grid.nx*param.grid.ny,
+                "T.ElementNo (" + d2s(T.ElementNo) + ") is out of range");
+    rho = param.media.rho_array[T.ElementNo];
+  }
+
+  return rho;
+}
+
+
+
+double RhoFuncCoefficient::Eval(mfem::ElementTransformation &T,
+                                const mfem::IntegrationPoint &ip)
+{
+  double rho;
+  Vector transip;
+  T.Transform(ip, transip);
+  const double func_val = (*Function)(transip, param);
+
+  if (param.reservoir.contains(transip))
+  {
+    int cell = param.reservoir.find_cell(transip);
+    MFEM_ASSERT(cell >= 0 && cell < param.reservoir.nx*param.reservoir.ny,
+                "cell index " + d2s(cell) + " is out of range for reservoir");
+    rho = param.reservoir.rho_array[cell];
+  }
+  else
+  {
+    MFEM_ASSERT(T.ElementNo >= 0 && T.ElementNo < param.grid.nx*param.grid.ny,
+                "T.ElementNo (" + d2s(T.ElementNo) + ") is out of range");
+    rho = param.media.rho_array[T.ElementNo];
+  }
+
+  return func_val*rho;
+}
+
+
+
+double LambdaFuncCoefficient::Eval(mfem::ElementTransformation &T,
+                                   const mfem::IntegrationPoint &ip)
+{
+  double rho, vp, vs;
+  Vector transip;
+  T.Transform(ip, transip);
+  const double func_val = (*Function)(transip, param);
+
+  if (param.reservoir.contains(transip))
+  {
+    const int cell = param.reservoir.find_cell(transip);
+    MFEM_ASSERT(cell >= 0 && cell < param.reservoir.nx*param.reservoir.ny,
+                "cell index " + d2s(cell) + " is out of range for reservoir");
+    rho = param.reservoir.rho_array[cell];
+    vp  = param.reservoir.vp_array[cell];
+    vs  = param.reservoir.vs_array[cell];
+  }
+  else
+  {
+    MFEM_ASSERT(T.ElementNo >= 0 && T.ElementNo < param.grid.nx*param.grid.ny,
+                "T.ElementNo (" + d2s(T.ElementNo) + ") is out of range");
+    rho = param.media.rho_array[T.ElementNo];
+    vp  = param.media.vp_array[T.ElementNo];
+    vs  = param.media.vs_array[T.ElementNo];
+  }
+
+  return func_val*rho*(vp*vp-2.*vs*vs);
+}
+
+
+
+double MuFuncCoefficient::Eval(mfem::ElementTransformation &T,
+                               const mfem::IntegrationPoint &ip)
+{
+  double rho, vs;
+  Vector transip;
+  T.Transform(ip, transip);
+  const double func_val = (*Function)(transip, param);
+
+  if (param.reservoir.contains(transip))
+  {
+    const int cell = param.reservoir.find_cell(transip);
+    MFEM_ASSERT(cell >= 0 && cell < param.reservoir.nx*param.reservoir.ny,
+                "cell index " + d2s(cell) + " is out of range for reservoir");
+    rho = param.reservoir.rho_array[cell];
+    vs  = param.reservoir.vs_array[cell];
+  }
+  else
+  {
+    MFEM_ASSERT(T.ElementNo >= 0 && T.ElementNo < param.grid.nx*param.grid.ny,
+                "T.ElementNo (" + d2s(T.ElementNo) + ") is out of range");
+    rho = param.media.rho_array[T.ElementNo];
+    vs  = param.media.vs_array[T.ElementNo];
+  }
+
+  return func_val*rho*vs*vs;
+}
+
+
+
+
 //------------------------------------------------------------------------------
 //
 // Auxiliary useful functions

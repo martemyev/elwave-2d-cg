@@ -53,6 +53,7 @@ SourceParameters::SourceParameters()
   , Mxx(1.0), Mxy(0.0), Myy(1.0) // explosive source
   , type("pointforce")
   , spatial_function("gauss")
+  , time_function("auto")
   , gauss_support(10.0)
   , plane_wave(false)
 { }
@@ -69,6 +70,7 @@ void SourceParameters::AddOptions(OptionsParser& args)
   args.AddOption(&Myy, "-myy", "--moment-tensor-yy", "yy-component of a moment tensor source");
   args.AddOption(&type, "-type", "--source-type", "Type of the source (pointforce, momenttensor)");
   args.AddOption(&spatial_function, "-spatial", "--source-spatial", "Spatial function of the source (delta, gauss)");
+  args.AddOption(&time_function, "-temporary", "--source-temporary", "Temporary function of the source (auto, ricker, firstgauss, gauss)");
   args.AddOption(&gauss_support, "-gs", "--gauss-support", "Gauss support for 'gauss' spatial function of the source");
   args.AddOption(&plane_wave, "-planewave", "--plane-wave", "-noplanewave", "--no-plane-wave", "Plane wave as a source");
 }
@@ -86,6 +88,12 @@ void SourceParameters::check_parameters() const
   if (!strcmp(spatial_function, "gauss"))
     MFEM_VERIFY(gauss_support > 0, "Gauss support (" + d2s(gauss_support) +
                 ") must be >0");
+
+  MFEM_VERIFY(!strcmp(time_function, "auto") ||
+              !strcmp(time_function, "ricker") ||
+              !strcmp(time_function, "firstgauss") ||
+              !strcmp(time_function, "gauss"), "Unknown temporary function "
+              "of the source: " + string(time_function));
 }
 
 
@@ -120,11 +128,11 @@ MediaPropertiesParameters::~MediaPropertiesParameters()
 void MediaPropertiesParameters::AddOptions(OptionsParser& args)
 {
   args.AddOption(&rho, "-rho", "--rho", "Density of homogeneous model, kg/m^3");
-  args.AddOption(&vp, "-vp", "--vp", "P-wave velocity of homogeneous model, m/s");
-  args.AddOption(&vs, "-vs", "--vs", "S-wave velocity of homogeneous model, m/s");
+  args.AddOption(&vp,  "-vp",  "--vp",  "P-wave velocity of homogeneous model, m/s");
+  args.AddOption(&vs,  "-vs",  "--vs",  "S-wave velocity of homogeneous model, m/s");
   args.AddOption(&rhofile, "-rhofile", "--rhofile", "Density file, in kg/m^3");
-  args.AddOption(&vpfile, "-vpfile", "--vpfile", "P-wave velocity file, in m/s");
-  args.AddOption(&vsfile, "-vsfile", "--vsfile", "S-wave velocity file, in m/s");
+  args.AddOption(&vpfile,  "-vpfile",  "--vpfile",  "P-wave velocity file, in m/s");
+  args.AddOption(&vsfile,  "-vsfile",  "--vsfile",  "S-wave velocity file, in m/s");
 }
 
 void MediaPropertiesParameters::check_parameters() const
@@ -231,9 +239,13 @@ ReservoirParameters::ReservoirParameters()
   , nx(0), ny(0)                      // if not set up - no reservoir
   , x0(0.0), x1(0.0)
   , y0(0.0), y1(0.0)
+  , rho(2500.0)
+  , vp(3500.0)
+  , vs(2000.0)
   , rhofile(DEFAULT_FILE_NAME)
   , vpfile(DEFAULT_FILE_NAME)
   , vsfile(DEFAULT_FILE_NAME)
+  , extend_to_damp(false)
   , rho_array(nullptr)
   , vp_array(nullptr)
   , vs_array(nullptr)
@@ -257,9 +269,15 @@ void ReservoirParameters::AddOptions(OptionsParser &args)
   args.AddOption(&x1, "-rsr-x1", "--reservoir-x1", "Right boundary of the reservoir layer, m");
   args.AddOption(&y0, "-rsr-y0", "--reservoir-y0", "Bottom boundary of the reservoir layer, m");
   args.AddOption(&y1, "-rsr-y1", "--reservoir-y1", "top boundary of the reservoir layer, m");
-  args.AddOption(&rhofile, "-rsr-rhofile", "--rsr-rhofile", "Density file for reservoir, in kg/m^3");
-  args.AddOption(&vpfile,  "-rsr-vpfile",  "--rsr-vpfile", "P-wave velocity file for reservoir, in m/s");
-  args.AddOption(&vsfile,  "-rsr-vsfile",  "--rsr-vsfile", "S-wave velocity file for reservoir, in m/s");
+  args.AddOption(&rho, "-rsr-rho", "--reservoir-rho", "Density of homogeneous reservoir, kg/m^3");
+  args.AddOption(&vp,  "-rsr-vp",  "--reservoir-vp",  "P-wave velocity of homogeneous reservoir, m/s");
+  args.AddOption(&vs,  "-rsr-vs",  "--reservoir-vs",  "S-wave velocity of homogeneous reservoir, m/s");
+  args.AddOption(&rhofile, "-rsr-rhofile", "--reservoir-rhofile", "Density file for reservoir, in kg/m^3");
+  args.AddOption(&vpfile,  "-rsr-vpfile",  "--reservoir-vpfile",  "P-wave velocity file for reservoir, in m/s");
+  args.AddOption(&vsfile,  "-rsr-vsfile",  "--reservoir-vsfile",  "S-wave velocity file for reservoir, in m/s");
+  args.AddOption(&extend_to_damp,  "-rsr-ext-damp", "--reservoir-extend-damp",
+                 "-no-rsr-ext-damp", "--no-reservoir-extend-damp",
+                 "Extend reservoir layer so it covers damping layer");
 }
 
 void ReservoirParameters::check_parameters(const GridParameters& grid) const
@@ -271,17 +289,13 @@ void ReservoirParameters::check_parameters(const GridParameters& grid) const
     MFEM_VERIFY(x1 < grid.sx, "Right boundary of the reservoir (" + d2s(x1) +
                 ") should be <sx (size domain in x-direction: " +
                 d2s(grid.sx) + ")");
+    MFEM_VERIFY(x1 > x0, "x1 should be >x0 for reservoir");
     MFEM_VERIFY(y0 > 0, "Bottom boundary of the reservoir (" + d2s(y0) +
                 ") should be >0");
     MFEM_VERIFY(y1 < grid.sy, "Top boundary of the reservoir (" + d2s(y1) +
                 ") should be <sy (size domain in y-direction: " +
                 d2s(grid.sy) + ")");
-    MFEM_VERIFY(strcmp(rhofile, DEFAULT_FILE_NAME), "rhofile for reservoir is "
-                "not set up");
-    MFEM_VERIFY(strcmp(vpfile, DEFAULT_FILE_NAME), "rhofile for reservoir is "
-                "not set up");
-    MFEM_VERIFY(strcmp(vsfile, DEFAULT_FILE_NAME), "rhofile for reservoir is "
-                "not set up");
+    MFEM_VERIFY(y1 > y0, "y1 should be >y0 for reservoir");
   }
 }
 
@@ -296,14 +310,87 @@ void ReservoirParameters::init()
   vp_array  = new double[n_elements];
   vs_array  = new double[n_elements];
 
-  read_binary(rhofile, n_elements, rho_array);
-  get_minmax(rho_array, n_elements, min_rho, max_rho);
+  if (!strcmp(rhofile, DEFAULT_FILE_NAME))
+  {
+    for (int i = 0; i < n_elements; ++i) rho_array[i] = rho;
+    min_rho = max_rho = rho;
+  }
+  else
+  {
+    read_binary(rhofile, n_elements, rho_array);
+    get_minmax(rho_array, n_elements, min_rho, max_rho);
+  }
 
-  read_binary(vpfile, n_elements, vp_array);
-  get_minmax(vp_array, n_elements, min_vp, max_vp);
+  if (!strcmp(vpfile, DEFAULT_FILE_NAME))
+  {
+    for (int i = 0; i < n_elements; ++i) vp_array[i] = vp;
+    min_vp = max_vp = vp;
+  }
+  else
+  {
+    read_binary(vpfile, n_elements, vp_array);
+    get_minmax(vp_array, n_elements, min_vp, max_vp);
+  }
 
-  read_binary(vsfile, n_elements, vs_array);
-  get_minmax(vs_array, n_elements, min_vs, max_vs);
+  if (!strcmp(vsfile, DEFAULT_FILE_NAME))
+  {
+    for (int i = 0; i < n_elements; ++i) vs_array[i] = vs;
+    min_vs = max_vs = vs;
+  }
+  else
+  {
+    read_binary(vsfile, n_elements, vs_array);
+    get_minmax(vs_array, n_elements, min_vs, max_vs);
+  }
+}
+
+bool ReservoirParameters::contains(const Vector &point) const
+{
+  if (!exists) return false;
+  const double tol = FIND_CELL_TOLERANCE;
+  const double y = point(1);
+  if (y+tol < y0 || y-tol > y1) return false; // not in the layer
+  if (!extend_to_damp) // if we restrict the reservoir domain (it's not a layer)
+  {                    // then we need to check x-coordinate too
+    const double x = point(0);
+    if (x+tol < x0 || x-tol > x1) return false;
+  }
+  // otherwise the point is in the reservoir
+  return true;
+}
+
+int ReservoirParameters::find_cell(const Vector &point) const
+{
+  MFEM_ASSERT(exists, "There is no reservoir");
+  const double tol = FIND_CELL_TOLERANCE;
+
+  const double y = point(1);
+  int celly = (y-y0)*ny/(y1-y0);
+  if (celly) --celly;
+
+  const double x = point(0);
+  if (extend_to_damp)
+  {
+    if (x+tol < x0) return celly*nx;
+    if (x-tol > x1) return celly*nx+nx-1;
+  }
+
+  // if the point is in the reservoir
+  int cellx = (x-x0)*nx/(x1-x0);
+  if (cellx) --cellx;
+
+  return celly*nx+cellx;
+}
+
+string ReservoirParameters::info() const
+{
+  string str = "\nReservoir properties:\nnx = " + d2s(nx) + " ny = " + d2s(ny)+
+               "\nx in [" + d2s(x0) + ", " + d2s(x1) + "]\ny in [" + d2s(y0) +
+               ", " + d2s(y1) + "]\nrho: min = " + d2s(min_rho) + ", max = " +
+               d2s(max_rho) + "\nvp: min = " + d2s(min_vp) + ", max = " +
+               d2s(max_vp) + "\nvs: min = " + d2s(min_vs) + ", max = " +
+               d2s(max_vs) + "\n";
+  return str;
 }
 
 
@@ -365,6 +452,8 @@ void Parameters::init(int argc, char **argv)
 
   media.init(grid);
   reservoir.init();
+
+  cout << reservoir.info() << endl;
 
   vector<double> min_velocities;
   min_velocities.push_back(media.min_vp);

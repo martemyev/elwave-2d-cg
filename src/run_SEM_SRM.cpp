@@ -14,6 +14,13 @@ using namespace mfem;
 double mass_damp_weight(const mfem::Vector& point, const Parameters& param);
 double stif_damp_weight(const mfem::Vector& point, const Parameters& param);
 
+void output_coef_values(const Parameters& param,
+                        RhoCoefficient &rho_coef,
+                        RhoFuncCoefficient &rho_damp_coef,
+                        LambdaFuncCoefficient &lambda_coef,
+                        MuFuncCoefficient &mu_coef,
+                        Mesh &mesh);
+
 
 
 void ElasticWave2D::run_SEM_SRM()
@@ -29,25 +36,12 @@ void ElasticWave2D::run_SEM_SRM()
   FiniteElementSpace fespace(&mesh, fec, dim); //, Ordering::byVDIM);
   cout << "Number of unknowns: " << fespace.GetVSize() << endl;
 
-  double *lambda_array = new double[n_elements];
-  double *mu_array     = new double[n_elements];
+  RhoCoefficient        rho_coef(param);
+  LambdaFuncCoefficient lambda_coef  (stif_damp_weight, param);
+  MuFuncCoefficient     mu_coef      (stif_damp_weight, param);
+  RhoFuncCoefficient    rho_damp_coef(mass_damp_weight, param);
 
-  for (int i = 0; i < n_elements; ++i)
-  {
-    const double rho = param.media.rho_array[i];
-    const double vp  = param.media.vp_array[i];
-    const double vs  = param.media.vs_array[i];
-
-    lambda_array[i]  = rho*(vp*vp - 2.*vs*vs);
-    mu_array[i]      = rho*vs*vs;
-  }
-
-  const bool own_array = false; // some objects don't own the arrays
-  CWConstCoefficient rho_coef(param.media.rho_array, own_array);
-  CWFunctionCoefficient lambda_coef  (stif_damp_weight, param, lambda_array);
-  CWFunctionCoefficient mu_coef      (stif_damp_weight, param, mu_array);
-  CWFunctionCoefficient rho_damp_coef(mass_damp_weight, param,
-                                      param.media.rho_array, own_array);
+  output_coef_values(param, rho_coef, rho_damp_coef, lambda_coef, mu_coef, mesh);
 
   IntegrationRule segment_GLL;
   create_segment_GLL_rule(param.order, segment_GLL);
@@ -167,15 +161,30 @@ void ElasticWave2D::run_SEM_SRM()
   cout << "N time steps = " << n_time_steps
        << "\nTime loop..." << endl;
 
+  // choose the time function for the source
+  double (*temp_function)(const SourceParameters&, double) = nullptr;
+  if (!strcmp(param.source.time_function, "auto"))
+  {
+    if (!strcmp(param.source.type, "pointforce"))
+      temp_function = &RickerWavelet;
+    else if (!strcmp(param.source.type, "momenttensor"))
+      temp_function = &GaussFirstDerivative;
+    else MFEM_ABORT("Unknown source type: " + string(param.source.type));
+  }
+  else if (!strcmp(param.source.time_function, "ricker"))
+    temp_function = &RickerWavelet;
+  else if (!strcmp(param.source.time_function, "firstgauss"))
+    temp_function = &GaussFirstDerivative;
+  else if (!strcmp(param.source.time_function, "gauss"))
+    temp_function = &GaussFunction;
+  else MFEM_ABORT("Unknown source time function: " +
+                  string(param.source.time_function));
+
   for (int time_step = 1; time_step <= n_time_steps; ++time_step)
   {
     const double cur_time = time_step * param.dt;
-    double time_val; // the value of the time-dependent part of the source
-    if (!strcmp(param.source.type, "pointforce"))
-      time_val = RickerWavelet(param.source, cur_time - param.dt);
-    else if (!strcmp(param.source.type, "momenttensor"))
-      time_val = GaussFirstDerivative(param.source, cur_time - param.dt);
-    else MFEM_ABORT("Unknown source type: " + string(param.source.type));
+    // the value of the time-dependent part of the source
+    const double time_val = (*temp_function)(param.source, cur_time - param.dt);
 
     Vector y = u_1; y *= 2.0; y -= u_2;        // y = 2*u_1 - u_2
 
@@ -342,5 +351,48 @@ void show_SRM_damp_weights(const Parameters& param)
   fname = "stif_damping_weights.vts";
   write_vts_scalar(fname, "stif_weights", param.grid.sx, param.grid.sy,
                    param.grid.nx, param.grid.ny, stif_damp);
+}
+
+
+
+void output_coef_values(const Parameters& param,
+                        RhoCoefficient& rho_coef,
+                        RhoFuncCoefficient& rho_damp_coef,
+                        LambdaFuncCoefficient& lambda_coef,
+                        MuFuncCoefficient& mu_coef,
+                        Mesh& mesh)
+{
+  FiniteElementCollection *testfec = new H1_FECollection(1);
+  FiniteElementSpace testfespace(&mesh, testfec);
+  GridFunction test(&testfespace);
+  Vector test_nodal;
+  string fname;
+  string extra = param.extra_string;
+
+  test.ProjectCoefficient(rho_coef);
+  test.GetNodalValues(test_nodal);
+  fname = "rho_values_" + extra + ".vts";
+  write_vts_scalar(fname, "rho", param.grid.sx, param.grid.sy,
+                   param.grid.nx, param.grid.ny, test_nodal);
+
+  test.ProjectCoefficient(rho_damp_coef);
+  test.GetNodalValues(test_nodal);
+  fname = "rho_damp_values_" + extra + ".vts";
+  write_vts_scalar(fname, "rho_damp", param.grid.sx, param.grid.sy,
+                   param.grid.nx, param.grid.ny, test_nodal);
+
+  test.ProjectCoefficient(lambda_coef);
+  test.GetNodalValues(test_nodal);
+  fname = "lambda_values_" + extra + ".vts";
+  write_vts_scalar(fname, "lambda", param.grid.sx, param.grid.sy,
+                   param.grid.nx, param.grid.ny, test_nodal);
+
+  test.ProjectCoefficient(mu_coef);
+  test.GetNodalValues(test_nodal);
+  fname = "mu_values_" + extra + ".vts";
+  write_vts_scalar(fname, "mu", param.grid.sx, param.grid.sy,
+                   param.grid.nx, param.grid.ny, test_nodal);
+
+  delete testfec;
 }
 

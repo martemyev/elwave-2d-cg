@@ -11,6 +11,7 @@ class SourceParameters;
 
 double RickerWavelet(const SourceParameters& source, double t);
 double GaussFirstDerivative(const SourceParameters& source, double t);
+double GaussFunction(const SourceParameters& source, double t);
 
 void PointForce(const SourceParameters& source, const mfem::Vector& location,
                 const mfem::Vector& x, mfem::Vector& f);

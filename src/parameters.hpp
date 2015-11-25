@@ -51,6 +51,7 @@ public:
   double Mxx, Mxy, Myy; ///< components of a moment tensor
   const char *type; ///< "pointforce", "momenttensor"
   const char *spatial_function; ///< "delta", "gauss"
+  const char *time_function; ///< "ricker", "firstgauss", "gauss" or "auto"
   double gauss_support; ///< size of the support for the "gauss" spatial function
   bool plane_wave; ///< plane wave as a source at the depth of y-coordinate of
                    ///< the source location
@@ -136,9 +137,11 @@ public:
   int nx, ny; ///< number of cells in the reservoir layer
   double x0, x1; ///< left and right boundaries of the reservoir layer
   double y0, y1; ///< bottom and top boundaries of the reservoir layer
+  double rho, vp, vs; ///< homogeneous media properties
   const char *rhofile; ///< file names for reservoir seismic properties
   const char *vpfile;
   const char *vsfile;
+  bool extend_to_damp; ///< reservoir layer will be extended in the damping layer
 
   double *rho_array, *vp_array, *vs_array; ///< arrays of values describing
                                            ///< reservoir seismic properties
@@ -148,6 +151,9 @@ public:
   void AddOptions(mfem::OptionsParser& args);
   void check_parameters(const GridParameters& grid) const;
   void init();
+  bool contains(const mfem::Vector& point) const;
+  int find_cell(const mfem::Vector& point) const;
+  std::string info() const;
 
 private:
   ReservoirParameters(const ReservoirParameters&);

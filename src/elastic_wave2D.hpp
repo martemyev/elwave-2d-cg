@@ -100,6 +100,74 @@ protected:
 
 
 
+class RhoCoefficient : public mfem::Coefficient
+{
+public:
+  RhoCoefficient(const Parameters& p)
+    : param(p)
+  { }
+  virtual ~RhoCoefficient() { }
+
+  virtual double Eval(mfem::ElementTransformation &T,
+                      const mfem::IntegrationPoint &ip);
+
+protected:
+  const Parameters& param;
+};
+
+class RhoFuncCoefficient : public mfem::Coefficient
+{
+public:
+  RhoFuncCoefficient(double(*F)(const mfem::Vector&, const Parameters&),
+                     const Parameters& p)
+    : Function(F), param(p)
+  { }
+  virtual ~RhoFuncCoefficient() { }
+
+  virtual double Eval(mfem::ElementTransformation &T,
+                      const mfem::IntegrationPoint &ip);
+
+protected:
+  double(*Function)(const mfem::Vector&, const Parameters&);
+  const Parameters& param;
+};
+
+class LambdaFuncCoefficient : public mfem::Coefficient
+{
+public:
+  LambdaFuncCoefficient(double(*F)(const mfem::Vector&, const Parameters&),
+                        const Parameters& p)
+    : Function(F), param(p)
+  { }
+  virtual ~LambdaFuncCoefficient() { }
+
+  virtual double Eval(mfem::ElementTransformation &T,
+                      const mfem::IntegrationPoint &ip);
+
+protected:
+  double(*Function)(const mfem::Vector&, const Parameters&);
+  const Parameters& param;
+};
+
+class MuFuncCoefficient : public mfem::Coefficient
+{
+public:
+  MuFuncCoefficient(double(*F)(const mfem::Vector&, const Parameters&),
+                    const Parameters& p)
+    : Function(F), param(p)
+  { }
+  virtual ~MuFuncCoefficient() { }
+
+  virtual double Eval(mfem::ElementTransformation &T,
+                      const mfem::IntegrationPoint &ip);
+
+protected:
+  double(*Function)(const mfem::Vector&, const Parameters&);
+  const Parameters& param;
+};
+
+
+
 void show_SRM_damp_weights(const Parameters& param);
 
 mfem::Vector compute_function_at_point(double sx, double sy, int nx, int ny,

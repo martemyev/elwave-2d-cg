@@ -19,6 +19,13 @@ double GaussFirstDerivative(const SourceParameters& source, double t)
   return source.scale*(t-1.0/f)*exp(-a*a);
 }
 
+double GaussFunction(const SourceParameters& source, double t)
+{
+  const double f = source.frequency;
+  const double a = M_PI*f*(t-1.0/f);
+  return source.scale*exp(-a*a)/(2.0*f*f*M_PI*M_PI);
+}
+
 void PointForce(const SourceParameters& source, const Vector& location,
                 const Vector& x, Vector& f)
 {

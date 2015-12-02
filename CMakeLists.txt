@@ -9,7 +9,7 @@ endif()
 string(TOUPPER ${CMAKE_BUILD_TYPE} BUILD_TYPE)
 
 set(MFEM_DIR "/u/artemyev/projects/mfem")
-if(BUILD_TYPE MATCHES DEBUG)
+if(BUILD_TYPE STREQUAL DEBUG)
   set(MFEM_BUILD "serialdebug")
 else()
   set(MFEM_BUILD "serial")
